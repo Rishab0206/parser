@@ -9,6 +9,36 @@ from app.core.database import Base
 def generate_uuid():
     return str(uuid.uuid4())
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    role = Column(String(32), default="Staff")  # "Admin" or "Staff"
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    applications = relationship("LoanApplication", back_populates="owner")
+    invites_created = relationship("Invite", back_populates="creator")
+
+class Invite(Base):
+    __tablename__ = "invites"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    token = Column(String(64), unique=True, nullable=False, index=True)
+    email = Column(String(255), nullable=False)
+    name = Column(String(255), nullable=False)
+    role = Column(String(32), default="Staff")
+    created_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    expires_at = Column(DateTime, nullable=False)
+    is_used = Column(Boolean, default=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    creator = relationship("User", back_populates="invites_created")
+
 class Customer(Base):
     __tablename__ = "customers"
 
@@ -24,9 +54,11 @@ class LoanApplication(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     customer_id = Column(String(36), ForeignKey("customers.id"), nullable=False)
+    owner_user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
     status = Column(String(50), default="ACTIVE")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+    owner = relationship("User", back_populates="applications")
     customer = relationship("Customer", back_populates="applications")
     statements = relationship("Statement", back_populates="application", cascade="all, delete-orphan")
     transactions = relationship("Transaction", back_populates="application", cascade="all, delete-orphan")
@@ -42,6 +74,7 @@ class Statement(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     application_id = Column(String(36), ForeignKey("loan_applications.id"), nullable=False)
+    owner_user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
     file_name_original = Column(String(255), nullable=False)
     file_hash_sha256 = Column(String(64), nullable=False, index=True)
     file_path_encrypted = Column(String(512), nullable=False)

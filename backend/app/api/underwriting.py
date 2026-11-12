@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import get_current_user, require_roles, CurrentUser, Role
+from app.core.security import get_current_user, require_roles, CurrentUser, Role, verify_application_access
 from app.models.models import (
     LoanApplication, AnalysisVersion, Statement, MonthlySummary,
     Transaction, ReturnRecord, EmiRecord, UnderwritingExport, AuditLog
@@ -17,15 +17,13 @@ router = APIRouter(prefix="/api", tags=["Underwriting & History"])
 def export_to_underwriting_engine(
     payload: dict = Body(...),
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_roles([Role.ADMIN, Role.UNDERWRITER]))
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     app_id = payload.get("application_id")
     if not app_id:
         raise HTTPException(status_code=400, detail="application_id is required")
 
-    app_obj = db.query(LoanApplication).filter(LoanApplication.id == app_id).first()
-    if not app_obj:
-        raise HTTPException(status_code=404, detail="Application not found")
+    app_obj = verify_application_access(app_id, current_user, db)
 
     current_ver = db.query(AnalysisVersion).filter(
         AnalysisVersion.application_id == app_id,
@@ -121,6 +119,7 @@ def get_analysis_history(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user)
 ):
+    verify_application_access(application_id, current_user, db)
     versions = db.query(AnalysisVersion).filter(
         AnalysisVersion.application_id == application_id
     ).order_by(AnalysisVersion.version_no.desc()).all()

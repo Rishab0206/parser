@@ -78,13 +78,23 @@ async def upload_statement(
         cust = Customer(name=init_name, phone_masked="98XXX XXXXX")
         db.add(cust)
         db.flush()
-        app_obj = LoanApplication(customer_id=cust.id, status="ACTIVE")
+        app_obj = LoanApplication(customer_id=cust.id, owner_user_id=current_user.user_id, status="ACTIVE")
         db.add(app_obj)
         db.flush()
         application_id = app_obj.id
+    else:
+        # Check ownership
+        if not app_obj.owner_user_id:
+            app_obj.owner_user_id = current_user.user_id
+        elif current_user.role != Role.ADMIN and app_obj.owner_user_id != current_user.user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Forbidden: You cannot upload statements to another user's customer."
+            )
 
     new_stmt = Statement(
         application_id=app_obj.id,
+        owner_user_id=current_user.user_id,
         file_name_original=file.filename,
         file_hash_sha256=file_hash,
         file_path_encrypted=encrypted_filepath,
@@ -137,6 +147,9 @@ def get_statement_status(
     stmt = db.query(Statement).filter(Statement.id == statement_id).first()
     if not stmt:
         raise HTTPException(status_code=404, detail="Statement not found")
+
+    if current_user.role != Role.ADMIN and stmt.owner_user_id and stmt.owner_user_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this statement.")
 
     from app.models.models import Transaction, ReviewQueue
     rows_parsed = db.query(Transaction).filter(Transaction.statement_id == statement_id).count()

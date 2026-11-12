@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Building, RefreshCw, Upload, Download, CheckCircle, 
-  Layers, AlertTriangle, ShieldCheck, FileSpreadsheet, Eye, Plus
+  Layers, AlertTriangle, ShieldCheck, FileSpreadsheet, Eye, Plus,
+  LogOut, Users, Shield
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -55,6 +56,23 @@ export const Dashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
+  const [accessForbiddenError, setAccessForbiddenError] = useState<string | null>(null);
+
+  const [currentUser, setCurrentUser] = useState<{ id: string; name: string; email: string; role: 'Admin' | 'Staff' } | null>(() => {
+    try {
+      const u = localStorage.getItem('auth_user');
+      return u ? JSON.parse(u) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleLogout = () => {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+    localStorage.removeItem('current_customer_app_id');
+    navigate('/login');
+  };
 
   // Load applications and customer history
   const refreshHistoryAndApps = async () => {
@@ -98,6 +116,7 @@ export const Dashboard: React.FC = () => {
       return;
     }
     setIsLoading(true);
+    setAccessForbiddenError(null);
     try {
       const [accs, sum, emiList, retList, abbList, rqList, histList] = await Promise.all([
         getAccounts(appId),
@@ -129,8 +148,17 @@ export const Dashboard: React.FC = () => {
       setTxns(txnResp.items);
       setTotalTxns(txnResp.total);
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error loading application intelligence", err);
+      if (err.status === 403 || err.error_code === 'FORBIDDEN') {
+        setAccessForbiddenError(err.message || "Access Denied (403): You do not have permission to access this customer record. Staff can only access their own uploads.");
+        setSummary(null);
+        setAccounts([]);
+        setEmis([]);
+        setReturns([]);
+        setMonthlyAbb([]);
+        setTxns([]);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -317,12 +345,70 @@ export const Dashboard: React.FC = () => {
               <Download className="w-3.5 h-3.5" />
               Export
             </button>
+
+            {/* Admin Manage Team Button */}
+            {currentUser?.role === 'Admin' && (
+              <button
+                onClick={() => navigate('/admin/team')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 text-xs font-semibold transition-colors"
+                title="Manage Staff members and single-use invite links"
+              >
+                <Users className="w-3.5 h-3.5 text-indigo-600" />
+                Team & Access
+              </button>
+            )}
+
+            {/* User Profile Pill & Logout */}
+            <div className="flex items-center pl-2 border-l border-slate-200 gap-2">
+              <div className="flex flex-col text-right">
+                <span className="text-xs font-bold text-slate-800 leading-tight">
+                  {currentUser?.name || 'User'}
+                </span>
+                <span className={`text-[10px] font-semibold uppercase tracking-wider ${
+                  currentUser?.role === 'Admin' ? 'text-indigo-600' : 'text-emerald-600'
+                }`}>
+                  {currentUser?.role || 'Staff'}
+                </span>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-slate-100 transition-colors"
+                title="Logout"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* 403 Forbidden Access Alert */}
+        {accessForbiddenError && (
+          <div className="mb-5 p-4 rounded-xl bg-red-50 border border-red-200 text-red-900 shadow-sm flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-red-800">Access Denied (403 Forbidden)</h4>
+                <p className="text-xs text-red-700 mt-0.5">{accessForbiddenError}</p>
+                <p className="text-[11px] text-red-600 mt-1">
+                  Staff accounts can only view statements they uploaded. If you believe this is an error, please contact your Administrator.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setAccessForbiddenError(null);
+                handleConfirmNewCustomer();
+              }}
+              className="px-3 py-1 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 transition"
+            >
+              Clear & Return
+            </button>
+          </div>
+        )}
+
         {exportStatus && (
           <div className="mb-4 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-xs flex items-center justify-between">
             <span className="font-medium">{exportStatus}</span>

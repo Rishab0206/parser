@@ -22,9 +22,35 @@ from app.api.abb import router as abb_router
 from app.api.turnover import router as turnover_router
 from app.api.review import router as review_router
 from app.api.underwriting import router as underwriting_router
+from app.api.auth import router as auth_router
+from app.core.security import get_current_user, CurrentUser, Role, hash_password
 
 # Initialize database schema
 Base.metadata.create_all(bind=engine)
+
+# Ensure owner_user_id columns exist on legacy tables
+from sqlalchemy import text
+with engine.connect() as conn:
+    for table_name in ["loan_applications", "statements"]:
+        try:
+            conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN owner_user_id VARCHAR(36)"))
+            conn.commit()
+        except Exception:
+            pass
+
+# Seed default Admin account if none exists
+with Session(bind=engine) as init_db:
+    admin_user = init_db.query(User).filter(User.role == Role.ADMIN).first()
+    if not admin_user:
+        admin_user = User(
+            email="rajesh.y7867@gmail.com",
+            name="Rishab (Admin)",
+            hashed_password=hash_password("Admin@123456"),
+            role=Role.ADMIN,
+            is_active=True
+        )
+        init_db.add(admin_user)
+        init_db.commit()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -48,6 +74,7 @@ app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, generic_exception_handler)
 
 # Include API Routers
+app.include_router(auth_router)
 app.include_router(statements_router)
 app.include_router(accounts_router)
 app.include_router(transactions_router)
@@ -68,8 +95,14 @@ def health_check():
     }
 
 @app.get("/api/applications", tags=["Applications"])
-def list_applications(db: Session = Depends(get_db)):
-    apps = db.query(LoanApplication).order_by(LoanApplication.created_at.desc()).all()
+def list_applications(
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    query = db.query(LoanApplication)
+    if current_user.role != Role.ADMIN:
+        query = query.filter(LoanApplication.owner_user_id == current_user.user_id)
+    apps = query.order_by(LoanApplication.created_at.desc()).all()
     return [
         {
             "id": a.id,
@@ -77,17 +110,24 @@ def list_applications(db: Session = Depends(get_db)):
             "customer_name": a.customer.name if a.customer else "Applicant",
             "phone_masked": a.customer.phone_masked if a.customer else "—",
             "status": a.status,
+            "owner_user_id": a.owner_user_id,
             "statement_count": len(a.statements),
             "created_at": a.created_at
         } for a in apps
     ]
 
 @app.get("/api/customer-history", tags=["Applications"])
-def get_customer_banking_history(db: Session = Depends(get_db)):
+def get_customer_banking_history(
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
     from app.models.models import MonthlySummary, ReturnRecord, EmiRecord, Transaction, Statement
     from sqlalchemy import func
 
-    apps = db.query(LoanApplication).order_by(LoanApplication.created_at.desc()).all()
+    query = db.query(LoanApplication)
+    if current_user.role != Role.ADMIN:
+        query = query.filter(LoanApplication.owner_user_id == current_user.user_id)
+    apps = query.order_by(LoanApplication.created_at.desc()).all()
     history = []
 
     for a in apps:
@@ -131,18 +171,22 @@ def get_customer_banking_history(db: Session = Depends(get_db)):
             "ach_ecs_return": ach_returns,
             "statement_count": len(stmts),
             "status": stmt_status,
+            "owner_user_id": a.owner_user_id,
             "created_at": a.created_at.strftime("%d %b %Y") if a.created_at else "—"
         })
 
     return history
 
 @app.post("/api/applications/reset", tags=["Applications"])
-def reset_new_application(db: Session = Depends(get_db)):
+def reset_new_application(
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """Creates a fresh customer application session for reset/new customer."""
     cust = Customer(name="New Applicant", phone_masked="—")
     db.add(cust)
     db.flush()
-    app_obj = LoanApplication(customer_id=cust.id, status="NEW")
+    app_obj = LoanApplication(customer_id=cust.id, owner_user_id=current_user.user_id, status="NEW")
     db.add(app_obj)
     db.commit()
     db.refresh(app_obj)
@@ -150,11 +194,33 @@ def reset_new_application(db: Session = Depends(get_db)):
         "id": app_obj.id,
         "customer_id": cust.id,
         "customer_name": cust.name,
+        "owner_user_id": app_obj.owner_user_id,
         "status": app_obj.status
     }
 
 @app.post("/api/applications", tags=["Applications"])
-def create_application(name: str = "Applicant", phone: str = "9876543210", db: Session = Depends(get_db)):
+def create_application(
+    name: str = "Applicant",
+    phone: str = "9876543210",
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    from app.core.encryption import mask_phone_number
+    cust = Customer(name=name, phone_masked=mask_phone_number(phone))
+    db.add(cust)
+    db.flush()
+    app_obj = LoanApplication(customer_id=cust.id, owner_user_id=current_user.user_id, status="ACTIVE")
+    db.add(app_obj)
+    db.commit()
+    db.refresh(app_obj)
+    return {
+        "id": app_obj.id,
+        "customer_id": cust.id,
+        "customer_name": cust.name,
+        "phone_masked": cust.phone_masked,
+        "owner_user_id": app_obj.owner_user_id,
+        "status": app_obj.status
+    }
     from app.core.encryption import mask_phone_number
     cust = Customer(name=name, phone_masked=mask_phone_number(phone))
     db.add(cust)

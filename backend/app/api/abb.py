@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import get_current_user, CurrentUser
+from app.core.security import get_current_user, CurrentUser, verify_application_access
 from app.models.models import MonthlySummary
 from app.schemas.schemas import MonthlySummaryResponse
 
@@ -16,6 +16,7 @@ def get_application_abb(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user)
 ):
+    verify_application_access(application_id, current_user, db)
     query = db.query(MonthlySummary).filter(MonthlySummary.application_id == application_id)
     if account_id:
         query = query.filter(MonthlySummary.account_id == account_id)

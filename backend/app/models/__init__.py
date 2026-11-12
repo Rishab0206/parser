@@ -1,4 +1,6 @@
 from app.models.models import (
+    User,
+    Invite,
     Customer,
     LoanApplication,
     Statement,
@@ -14,6 +16,8 @@ from app.models.models import (
 )
 
 __all__ = [
+    "User",
+    "Invite",
     "Customer",
     "LoanApplication",
     "Statement",

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.core.database import get_db
-from app.core.security import get_current_user, CurrentUser
+from app.core.security import get_current_user, CurrentUser, verify_application_access
 from app.models.models import Statement, MonthlySummary, EmiRecord, Transaction
 from app.schemas.schemas import AccountCardResponse
 
@@ -16,6 +16,7 @@ def get_application_accounts(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user)
 ):
+    verify_application_access(application_id, current_user, db)
     statements = db.query(Statement).filter(Statement.application_id == application_id).all()
     if not statements:
         return []

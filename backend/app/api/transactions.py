@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.core.database import get_db
-from app.core.security import get_current_user, CurrentUser
+from app.core.security import get_current_user, CurrentUser, verify_application_access
 from app.models.models import Transaction, Statement
 from app.schemas.schemas import TransactionListResponse, TransactionResponse
 
@@ -24,6 +24,7 @@ def get_application_transactions(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user)
 ):
+    verify_application_access(application_id, current_user, db)
     query = db.query(Transaction, Statement).join(
         Statement, Transaction.statement_id == Statement.id
     ).filter(Transaction.application_id == application_id)

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import get_current_user, CurrentUser
+from app.core.security import get_current_user, CurrentUser, verify_application_access
 from app.models.models import EmiRecord, EmiAttempt, Transaction, Statement
 from app.schemas.schemas import EmiRecordResponse, EmiDetailResponse, EmiAttemptResponse
 
@@ -15,6 +15,7 @@ def get_application_emis(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user)
 ):
+    verify_application_access(application_id, current_user, db)
     emis = db.query(EmiRecord).filter(EmiRecord.application_id == application_id).all()
     results = []
 
