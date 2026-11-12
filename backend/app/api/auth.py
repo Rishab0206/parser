@@ -243,3 +243,4 @@ def accept_invite(req: AcceptInviteRequest, db: Session = Depends(get_db)):
             "role": new_user.role
         }
     }
+

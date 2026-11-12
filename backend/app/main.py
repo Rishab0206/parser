@@ -23,6 +23,7 @@ from app.api.turnover import router as turnover_router
 from app.api.review import router as review_router
 from app.api.underwriting import router as underwriting_router
 from app.api.auth import router as auth_router
+from app.api.gst import router as gst_router
 from app.core.security import get_current_user, CurrentUser, Role, hash_password
 
 # Initialize database schema
@@ -84,6 +85,7 @@ app.include_router(abb_router)
 app.include_router(turnover_router)
 app.include_router(review_router)
 app.include_router(underwriting_router)
+app.include_router(gst_router)
 
 @app.get("/health", tags=["Health"])
 def health_check():

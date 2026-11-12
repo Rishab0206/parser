@@ -23,6 +23,7 @@ import { MonthlyAbbTable } from '../components/MonthlyAbbTable';
 import { TransactionsTable } from '../components/TransactionsTable';
 import { ReviewQueueTable } from '../components/ReviewQueueTable';
 import { CustomerHistoryTable } from '../components/CustomerHistoryTable';
+import { GstIntelligenceCard } from '../components/GstIntelligenceCard';
 import { EmptyState } from '../components/EmptyState';
 import { formatDate } from '../utils/format';
 
@@ -426,6 +427,7 @@ export const Dashboard: React.FC = () => {
               { id: 'abb', label: `Monthly ABB (${monthlyAbb.length})` },
               { id: 'transactions', label: `All Transactions (${totalTxns})` },
               { id: 'review', label: `Review Queue (${reviewItems.length})`, badge: reviewItems.length > 0 },
+              { id: 'gst', label: 'GST & PAN Intelligence' },
               { id: 'history', label: `Customer History (${customerHistory.length})` },
             ].map((tab) => (
               <button
@@ -472,6 +474,11 @@ export const Dashboard: React.FC = () => {
               onExportCustomer={handleExportUnderwriting}
             />
           </div>
+        ) : activeTab === 'gst' ? (
+          <GstIntelligenceCard
+            currentApplicationId={selectedAppId || undefined}
+            currentCustomerName={currentApp?.customer_name}
+          />
         ) : isDashboardEmpty && !isLoading ? (
           /* Empty State for New Customer */
           <EmptyState onUploadClick={() => navigate('/upload')} />

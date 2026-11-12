@@ -70,3 +70,4 @@ export function acceptInviteApi(token: string, password: string): Promise<LoginR
     body: JSON.stringify({ token, password }),
   });
 }
+
