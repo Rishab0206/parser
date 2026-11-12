@@ -1,6 +1,5 @@
 import re
 import os
-import urllib.request
 import json
 from typing import Optional, Dict, Any, List
 from difflib import SequenceMatcher
@@ -84,26 +83,14 @@ def validate_gstin_checksum(gstin: str) -> bool:
     expected = compute_gstin_checksum(gstin[:14])
     return gstin[14].upper() == expected
 
-def calculate_name_similarity(name1: str, name2: str) -> float:
-    """Computes string similarity score between 0.0 and 1.0."""
-    if not name1 or not name2:
-        return 0.0
-    n1 = re.sub(r'[^a-zA-Z0-9\s]', '', name1).strip().lower()
-    n2 = re.sub(r'[^a-zA-Z0-9\s]', '', name2).strip().lower()
-    if n1 == n2:
-        return 1.0
-    words1 = set(n1.split())
-    words2 = set(n2.split())
-    if words1 and words2:
-        overlap = len(words1.intersection(words2)) / max(len(words1), len(words2))
-        seq_ratio = SequenceMatcher(None, n1, n2).ratio()
-        return round(max(overlap, seq_ratio), 2)
-    return round(SequenceMatcher(None, n1, n2).ratio(), 2)
-
 class GstPanService:
 
     @staticmethod
-    def analyze_query(query: str, customer_name: Optional[str] = None) -> Dict[str, Any]:
+    def analyze_query(
+        query: str,
+        customer_name: Optional[str] = None,
+        target_state: Optional[str] = None
+    ) -> Dict[str, Any]:
         cleaned = re.sub(r'[^a-zA-Z0-9]', '', query).strip().upper()
         
         is_pan = bool(re.match(r'^[A-Z]{5}[0-9]{4}[A-Z]{1}$', cleaned))
@@ -112,7 +99,7 @@ class GstPanService:
         if not is_pan and not is_gstin:
             return {
                 "valid": False,
-                "error": "Invalid format. Please enter a 10-digit PAN (e.g. ABCDE1234F) or a 15-digit GSTIN (e.g. 07ABCDE1234F1Z5)."
+                "error": "Invalid format. Please enter a 10-digit PAN (e.g. ABCDE1234F) or a 15-digit GSTIN (e.g. 24ABCDE1234F1Z1)."
             }
 
         pan = cleaned if is_pan else cleaned[2:12]
@@ -120,7 +107,6 @@ class GstPanService:
         entity_type = PAN_ENTITY_TYPES.get(entity_code, "Unknown Business Entity")
         name_initial = pan[4] if len(pan) >= 5 else ""
 
-        # Construct GSTIN items
         gstins = []
         if is_gstin:
             state_code = cleaned[:2]
@@ -132,33 +118,35 @@ class GstPanService:
                 "state_name": state_name,
                 "entity_number": cleaned[12],
                 "checksum_valid": is_valid_chk,
-                "status": "Active (Format Verified)",
-                "source": "Input GSTIN"
+                "status": "Verified GSTIN Format" if is_valid_chk else "Invalid Checksum",
+                "source": "Direct GSTIN"
             })
-        else:
-            # Generate common commercial state combinations for the PAN
-            priority_states = ["07", "27", "24", "09", "06", "29", "33", "19", "23", "08"]
-            for st in priority_states:
-                base_14 = f"{st}{pan}1Z"
-                chk = compute_gstin_checksum(base_14)
-                full_candidate = f"{base_14}{chk}"
-                gstins.append({
-                    "gstin": full_candidate,
-                    "state_code": st,
-                    "state_name": GST_STATE_CODES.get(st, f"State {st}"),
-                    "entity_number": "1",
-                    "checksum_valid": True,
-                    "status": "Candidate GSTIN",
-                    "source": "State Mapping"
-                })
+        elif target_state and target_state in GST_STATE_CODES:
+            # Only generate for the explicitly requested state
+            base_14 = f"{target_state}{pan}1Z"
+            chk = compute_gstin_checksum(base_14)
+            full_gstin = f"{base_14}{chk}"
+            gstins.append({
+                "gstin": full_gstin,
+                "state_code": target_state,
+                "state_name": GST_STATE_CODES.get(target_state, f"State {target_state}"),
+                "entity_number": "1",
+                "checksum_valid": True,
+                "status": "State GSTIN Format",
+                "source": "Selected State"
+            })
 
         # Underwriting Cross-Verification & Risk Assessment
         risk_flags = []
         risk_level = "LOW"
         match_score = 100
 
-        if customer_name:
-            # Check if 5th letter matches first letter of customer surname or company name
+        # Don't penalize if placeholder name like 'Goods and Services Tax' is present
+        is_generic_placeholder = customer_name and customer_name.strip().lower() in [
+            "goods and services tax", "applicant", "new applicant", "customer"
+        ]
+
+        if customer_name and not is_generic_placeholder:
             customer_words = [w for w in re.split(r'\s+', customer_name.strip().upper()) if w]
             first_letters = [w[0] for w in customer_words if w]
             
@@ -181,7 +169,7 @@ class GstPanService:
                 match_score -= 10
 
         if not risk_flags:
-            risk_flags.append("PAN structure and entity classification fully align with applicant profile.")
+            risk_flags.append("PAN structure and entity classification verified.")
 
         underwriting_recommendation = (
             "Verified Sole Proprietorship / Individual entity. Acceptable for Unsecured Business Loans / MSME lending."
@@ -202,8 +190,10 @@ class GstPanService:
             "entity_type": entity_type,
             "name_initial": name_initial,
             "gstins": gstins,
+            "all_states": GST_STATE_CODES,
+            "gov_search_url": "https://services.gst.gov.in/services/searchtpbypan",
             "matching": {
-                "customer_name": customer_name or "Applicant",
+                "customer_name": "Applicant" if is_generic_placeholder else (customer_name or "Applicant"),
                 "match_score": max(match_score, 20),
                 "risk_level": risk_level,
                 "observations": risk_flags,

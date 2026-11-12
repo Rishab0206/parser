@@ -27,13 +27,16 @@ export interface GstLookupResponse {
   entity_type: string;
   name_initial: string;
   gstins: GstinItem[];
+  all_states: Record<string, string>;
+  gov_search_url: string;
   matching: GstMatchingAnalysis;
 }
 
 export function lookupGstOrPan(
   query: string,
   applicationId?: string,
-  customerName?: string
+  customerName?: string,
+  targetState?: string
 ): Promise<GstLookupResponse> {
   return apiFetch<GstLookupResponse>('/api/gst/lookup', {
     method: 'POST',
@@ -41,6 +44,7 @@ export function lookupGstOrPan(
       query: query.trim().toUpperCase(),
       application_id: applicationId || undefined,
       customer_name: customerName || undefined,
+      target_state: targetState || undefined,
     }),
   });
 }

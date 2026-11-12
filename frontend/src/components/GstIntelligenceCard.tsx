@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, ShieldAlert, ShieldCheck, CheckCircle2, AlertTriangle, Copy, Check, Building2, UserCheck, HelpCircle } from 'lucide-react';
+import { Search, ShieldAlert, ShieldCheck, CheckCircle2, AlertTriangle, Copy, Check, Building2, UserCheck, ExternalLink, MapPin } from 'lucide-react';
 import { lookupGstOrPan, GstLookupResponse } from '../api/gst';
 
 interface GstIntelligenceCardProps {
@@ -12,14 +12,17 @@ export const GstIntelligenceCard: React.FC<GstIntelligenceCardProps> = ({
   currentCustomerName,
 }) => {
   const [query, setQuery] = useState('');
+  const [selectedState, setSelectedState] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<GstLookupResponse | null>(null);
   const [copiedGstin, setCopiedGstin] = useState<string | null>(null);
+  const [copiedPan, setCopiedPan] = useState(false);
 
-  const handleSearch = async (e?: React.FormEvent) => {
+  const handleSearch = async (e?: React.FormEvent, stateOverride?: string) => {
     if (e) e.preventDefault();
-    if (!query.trim()) {
+    const q = query.trim().toUpperCase();
+    if (!q) {
       setError('Please enter a 10-digit PAN or 15-digit GSTIN.');
       return;
     }
@@ -27,7 +30,8 @@ export const GstIntelligenceCard: React.FC<GstIntelligenceCardProps> = ({
     setError(null);
     setLoading(true);
     try {
-      const res = await lookupGstOrPan(query, currentApplicationId, currentCustomerName);
+      const stateToUse = stateOverride !== undefined ? stateOverride : selectedState;
+      const res = await lookupGstOrPan(q, currentApplicationId, currentCustomerName, stateToUse || undefined);
       setData(res);
     } catch (err: any) {
       setError(err.message || 'Failed to verify PAN/GSTIN. Please check the format.');
@@ -36,10 +40,22 @@ export const GstIntelligenceCard: React.FC<GstIntelligenceCardProps> = ({
     }
   };
 
-  const copyToClipboard = (text: string) => {
+  const handleStateChange = (stateCode: string) => {
+    setSelectedState(stateCode);
+    if (data && data.input_type === 'PAN') {
+      handleSearch(undefined, stateCode);
+    }
+  };
+
+  const copyToClipboard = (text: string, isPan = false) => {
     navigator.clipboard.writeText(text);
-    setCopiedGstin(text);
-    setTimeout(() => setCopiedGstin(null), 2000);
+    if (isPan) {
+      setCopiedPan(true);
+      setTimeout(() => setCopiedPan(false), 2000);
+    } else {
+      setCopiedGstin(text);
+      setTimeout(() => setCopiedGstin(null), 2000);
+    }
   };
 
   return (
@@ -53,7 +69,7 @@ export const GstIntelligenceCard: React.FC<GstIntelligenceCardProps> = ({
               GST & PAN Verification Intelligence
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Instant entity type classification, Luhn checksum validation, and Bank vs GST cross-verification
+              Verify PAN legal entity type, calculate Luhn Mod-36 checksum, and check state-specific GST registration
             </p>
           </div>
           {currentCustomerName && (
@@ -70,7 +86,7 @@ export const GstIntelligenceCard: React.FC<GstIntelligenceCardProps> = ({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value.toUpperCase())}
-              placeholder="Enter 10-digit PAN (e.g. AABCP1234F) or 15-digit GSTIN (e.g. 07AABCP1234F1Z5)"
+              placeholder="Enter 10-digit PAN (e.g. AJJPY0658E) or 15-digit GSTIN (e.g. 24AJJPY0658E1Z1)"
               className="w-full uppercase font-mono tracking-wider pl-3.5 pr-10 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition"
             />
             <span className="absolute right-3 top-2.5 text-[10px] font-mono text-slate-400 font-bold uppercase">
@@ -138,47 +154,173 @@ export const GstIntelligenceCard: React.FC<GstIntelligenceCardProps> = ({
               </p>
             </div>
 
-            {/* Risk Assessment */}
+            {/* Verification Status */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                Underwriting Risk Level
+                Verification Mode
               </span>
               <div className="mt-1 flex items-center gap-2">
-                <span
-                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
-                    data.matching.risk_level === 'LOW'
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : data.matching.risk_level === 'MEDIUM'
-                      ? 'bg-amber-100 text-amber-800'
-                      : 'bg-red-100 text-red-800'
-                  }`}
-                >
-                  {data.matching.risk_level === 'LOW' ? (
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                  ) : (
-                    <ShieldAlert className="w-3.5 h-3.5" />
-                  )}
-                  {data.matching.risk_level} RISK
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  {data.input_type === 'GSTIN' ? '15-DIGIT GSTIN' : '10-DIGIT PAN'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 mt-1.5">
-                Verification Score: <strong className="text-slate-800">{data.matching.match_score}%</strong>
+                {data.input_type === 'GSTIN' ? 'Specific State Registration' : 'Valid Legal Identity'}
               </p>
             </div>
 
-            {/* Registrations Found */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                {data.input_type === 'GSTIN' ? 'Verified GSTIN' : 'State GST Profiles'}
-              </span>
-              <p className="text-2xl font-black text-slate-900 mt-1">
-                {data.gstins.length}
-              </p>
-              <p className="text-[11px] text-slate-500 mt-1">
-                {data.input_type === 'GSTIN' ? 'Single State Registration' : 'Standard Priority States'}
-              </p>
+            {/* Official GST Portal Link */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+              <div>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  Official GST Portal Check
+                </span>
+                <p className="text-xs text-slate-600 mt-1">
+                  Verify government records for PAN <strong className="font-mono">{data.pan}</strong>
+                </p>
+              </div>
+              <a
+                href={data.gov_search_url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold transition"
+              >
+                <span>Search by PAN on GST Portal</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
             </div>
           </div>
+
+          {/* If Search was by PAN: State Selection Box (To avoid showing false states) */}
+          {data.input_type === 'PAN' && (
+            <div className="bg-slate-50 rounded-xl border border-slate-200 p-5 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                    <MapPin className="w-4 h-4 text-indigo-600" />
+                    Verify State GSTIN for this PAN
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    An individual or company only registers GST in states where they conduct business. Select your state to calculate and verify the exact 15-digit GSTIN:
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3 items-center">
+                <select
+                  value={selectedState}
+                  onChange={(e) => handleStateChange(e.target.value)}
+                  className="w-full sm:w-80 px-3.5 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-600"
+                >
+                  <option value="">-- Select Your Business State --</option>
+                  {data.all_states &&
+                    Object.entries(data.all_states).map(([code, name]) => (
+                      <option key={code} value={code}>
+                        {name} ({code})
+                      </option>
+                    ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(data.pan, true)}
+                  className="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
+                >
+                  {copiedPan ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-700">PAN Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Copy PAN for GST Portal</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* GSTIN Details (Only shows when an actual GSTIN was queried or a state was selected) */}
+          {data.gstins.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+              <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                    {data.input_type === 'GSTIN' ? 'GSTIN Registration Details' : `Calculated GSTIN for Selected State`}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    15-character alphanumeric format with Luhn Mod-36 checksum verification
+                  </p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-500 font-semibold uppercase border-b border-slate-200">
+                    <tr>
+                      <th className="px-6 py-3">State / Jurisdiction</th>
+                      <th className="px-6 py-3">15-Digit GSTIN</th>
+                      <th className="px-6 py-3">Entity No.</th>
+                      <th className="px-6 py-3">Luhn Checksum</th>
+                      <th className="px-6 py-3">Status</th>
+                      <th className="px-6 py-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {data.gstins.map((g, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-6 py-3.5 font-medium text-slate-800">
+                          {g.state_name} <span className="font-mono text-slate-400 text-[10px]">({g.state_code})</span>
+                        </td>
+                        <td className="px-6 py-3.5 font-mono font-bold text-slate-900 tracking-wider">
+                          {g.gstin}
+                        </td>
+                        <td className="px-6 py-3.5 font-mono text-slate-600">
+                          {g.entity_number}
+                        </td>
+                        <td className="px-6 py-3.5">
+                          <span
+                            className={`inline-flex items-center gap-1 text-[11px] font-semibold ${
+                              g.checksum_valid ? 'text-emerald-700' : 'text-red-600'
+                            }`}
+                          >
+                            {g.checksum_valid ? <Check className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                            {g.checksum_valid ? 'Valid Checksum' : 'Invalid Checksum'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-3.5">
+                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            {g.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-3.5 text-right">
+                          <button
+                            onClick={() => copyToClipboard(g.gstin)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-100 text-[11px] font-semibold text-slate-700 transition"
+                          >
+                            {copiedGstin === g.gstin ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span className="text-emerald-700">Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3 text-slate-500" />
+                                <span>Copy GSTIN</span>
+                              </>
+                            )}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Cross-Verification & Underwriting Observations */}
           <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs space-y-4">
@@ -219,8 +361,6 @@ export const GstIntelligenceCard: React.FC<GstIntelligenceCardProps> = ({
                   >
                     {obs.startsWith('Mismatch') ? (
                       <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                    ) : obs.startsWith('Notice') ? (
-                      <HelpCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                     ) : (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                     )}
@@ -228,74 +368,6 @@ export const GstIntelligenceCard: React.FC<GstIntelligenceCardProps> = ({
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-
-          {/* GSTIN Details / State Mapping Table */}
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-                  {data.input_type === 'GSTIN' ? 'GSTIN Verification Details' : 'State-Wise GSTIN Mapping (Mod-36 Checksum)'}
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Calculated with official Luhn Mod-36 checksum rules per Indian GST specification
-                </p>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-500 font-semibold uppercase border-b border-slate-200">
-                  <tr>
-                    <th className="px-6 py-3">State / Jurisdiction</th>
-                    <th className="px-6 py-3">15-Digit GSTIN</th>
-                    <th className="px-6 py-3">Luhn Checksum</th>
-                    <th className="px-6 py-3">Status</th>
-                    <th className="px-6 py-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {data.gstins.map((g, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="px-6 py-3.5 font-medium text-slate-800">
-                        {g.state_name} <span className="font-mono text-slate-400 text-[10px]">({g.state_code})</span>
-                      </td>
-                      <td className="px-6 py-3.5 font-mono font-bold text-slate-900 tracking-wider">
-                        {g.gstin}
-                      </td>
-                      <td className="px-6 py-3.5">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
-                          <Check className="w-3.5 h-3.5" /> Valid
-                        </span>
-                      </td>
-                      <td className="px-6 py-3.5">
-                        <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
-                          {g.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-3.5 text-right">
-                        <button
-                          onClick={() => copyToClipboard(g.gstin)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-100 text-[11px] font-semibold text-slate-700 transition"
-                        >
-                          {copiedGstin === g.gstin ? (
-                            <>
-                              <Check className="w-3 h-3 text-emerald-600" />
-                              <span className="text-emerald-700">Copied</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3 h-3 text-slate-500" />
-                              <span>Copy</span>
-                            </>
-                          )}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           </div>
         </div>
