@@ -1,0 +1,23 @@
+{
+  "bank_name": "YES Bank",
+  "bank_code": "YES",
+  "ifsc_prefixes": ["YESB"],
+  "account_types": ["SAVINGS", "CURRENT"],
+  "amount_style": "TWO_COL",
+  "header_aliases": {
+    "date": ["Date", "Txn Date", "Transaction Date"],
+    "narration": ["Narration", "Description", "Transaction Description"],
+    "ref": ["Chq/Ref", "Cheque/Ref Number", "Ref No"],
+    "debit": ["Withdrawal", "Withdrawal (Dr)", "Debit"],
+    "credit": ["Deposit", "Deposit (Cr)", "Credit"],
+    "balance": ["Balance", "Running Balance"]
+  },
+  "date_formats": ["%d/%m/%Y", "%d-%m-%Y", "%d %b %Y"],
+  "opening_keywords": ["OPENING BALANCE", "BROUGHT FORWARD"],
+  "narration_keywords": {
+    "emi": ["NACH DR", "EMI", "LOAN REC", "AUTO DEBIT"],
+    "return": ["RETURN", "RET", "NACH RET", "UNPAID"],
+    "charge": ["CHG FOR RETURN", "BOUNCE CHARGES", "RETURN CHG"]
+  }
+}
+

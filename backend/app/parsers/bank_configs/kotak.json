@@ -1,0 +1,24 @@
+{
+  "bank_name": "Kotak Mahindra Bank",
+  "bank_code": "KOTAK",
+  "ifsc_prefixes": ["KKBK"],
+  "account_types": ["SAVINGS", "CURRENT"],
+  "amount_style": "TWO_COL",
+  "header_aliases": {
+    "date": ["Date", "Transaction Date", "Txn Date", "Post Date"],
+    "value_date": ["Value Date", "Value Dt"],
+    "narration": ["Description", "Narration", "Particulars", "Transaction Details"],
+    "ref": ["Chq/Ref", "Chq / Ref No.", "Ref No", "Cheque No", "Ref/Chq.No."],
+    "debit": ["Withdrawal Dr", "Withdrawal (Dr)", "Withdrawal", "Debit"],
+    "credit": ["Deposit Cr", "Deposit (Cr)", "Deposit", "Credit"],
+    "balance": ["Balance", "Closing Balance", "Account Balance"]
+  },
+  "date_formats": ["%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%d-%b-%Y"],
+  "opening_keywords": ["OPENING", "B/F", "BROUGHT FORWARD", "OPENING BALANCE"],
+  "narration_keywords": {
+    "emi": ["NACH-DR", "NACH DR", "EMI", "LOAN", "MANDATE", "E-NACH"],
+    "return": ["RETURN", "RTRN", "RET", "ECS RETURN", "NACH RETURN", "UNPAID", "BOUNCE"],
+    "charge": ["ECS RTN CHG", "NACH RTN CHG", "RETURN CHARGES", "CHQ RET CHG", "BOUNCE CHG"]
+  }
+}
+

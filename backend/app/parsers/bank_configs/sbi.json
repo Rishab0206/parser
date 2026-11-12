@@ -1,0 +1,24 @@
+{
+  "bank_name": "State Bank of India",
+  "bank_code": "SBI",
+  "ifsc_prefixes": ["SBIN"],
+  "account_types": ["SAVINGS", "CURRENT"],
+  "amount_style": "TWO_COL",
+  "header_aliases": {
+    "date": ["Transaction Date", "Txn Date", "Post Date"],
+    "value_date": ["Value Date"],
+    "narration": ["Description", "Narration", "Particulars"],
+    "ref": ["Ref", "Ref No./Cheque No.", "Cheque No.", "Ref No"],
+    "debit": ["Debit", "Withdrawal Amount"],
+    "credit": ["Credit", "Deposit Amount"],
+    "balance": ["Balance", "Closing Balance"]
+  },
+  "date_formats": ["%d %b %Y", "%d/%m/%Y", "%d-%m-%Y", "%d-%b-%Y"],
+  "opening_keywords": ["OPENING BALANCE", "BROUGHT FORWARD"],
+  "narration_keywords": {
+    "emi": ["BULK POSTING", "NACH/DR", "ECS/DR", "LOAN EMI", "MANDATE"],
+    "return": ["RETURN", "RET", "ECS RET", "NACH RET", "UNPAID CHEQUE"],
+    "charge": ["RETURN CHARGE", "CHQ RET CHG", "ECS RTN CHG", "PENALTY"]
+  }
+}
+

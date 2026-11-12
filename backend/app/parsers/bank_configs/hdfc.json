@@ -1,0 +1,24 @@
+{
+  "bank_name": "HDFC Bank",
+  "bank_code": "HDFC",
+  "ifsc_prefixes": ["HDFC"],
+  "account_types": ["SAVINGS", "CURRENT"],
+  "amount_style": "TWO_COL",
+  "header_aliases": {
+    "date": ["Date", "Txn Date", "Transaction Date"],
+    "narration": ["Narration", "Description", "Particulars"],
+    "ref": ["Chq/Ref", "Chq/Ref No", "Cheque/Ref.No.", "Ref No"],
+    "value_date": ["Value Dt", "Value Date"],
+    "debit": ["Withdrawal", "Withdrawal Amt.", "Debit", "Withdrawals"],
+    "credit": ["Deposit", "Deposit Amt.", "Credit", "Deposits"],
+    "balance": ["Closing Balance", "Balance"]
+  },
+  "date_formats": ["%d/%m/%y", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y"],
+  "opening_keywords": ["OPENING BALANCE", "BROUGHT FORWARD", "B/F"],
+  "narration_keywords": {
+    "emi": ["ACH D-", "NACH", "EMI", "LOAN", "E-NACH", "NETBANK, LOAN"],
+    "return": ["RETURN", "RET", "ACH RETURN", "ECS RET", "UNPAID"],
+    "charge": ["CHG:RET", "RETURN CHARGES", "ACH RTN CHG", "ECS RTN CHG"]
+  }
+}
+

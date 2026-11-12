@@ -1,0 +1,24 @@
+{
+  "bank_name": "ICICI Bank",
+  "bank_code": "ICICI",
+  "ifsc_prefixes": ["ICIC"],
+  "account_types": ["SAVINGS", "CURRENT"],
+  "amount_style": "TWO_COL",
+  "header_aliases": {
+    "date": ["Txn Date", "Transaction Date", "Date"],
+    "value_date": ["Value Date", "Value Dt"],
+    "narration": ["Description", "Transaction Details", "Narration", "Particulars"],
+    "ref": ["Ref", "Ref No/Cheque No", "Cheque No", "Reference No"],
+    "debit": ["Debit", "Withdrawal (Dr)", "Withdrawals"],
+    "credit": ["Credit", "Deposit (Cr)", "Deposits"],
+    "balance": ["Balance", "Auto Sweep Balance", "Closing Balance"]
+  },
+  "date_formats": ["%d/%m/%Y", "%d-%m-%Y", "%d-%b-%Y"],
+  "opening_keywords": ["OPENING BALANCE", "B/F"],
+  "narration_keywords": {
+    "emi": ["INF/INFT/", "ACH/", "NACH/", "LOAN", "EMI", "CMS/"],
+    "return": ["RETURN", "RET", "ECS RET", "NACH RET", "UNPAID"],
+    "charge": ["CHG FOR RTN", "RETURN CHG", "ECS RTN CHG"]
+  }
+}
+

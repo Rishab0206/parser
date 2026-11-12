@@ -1,0 +1,24 @@
+{
+  "bank_name": "Axis Bank",
+  "bank_code": "AXIS",
+  "ifsc_prefixes": ["UTIB"],
+  "account_types": ["SAVINGS", "CURRENT"],
+  "amount_style": "TWO_COL",
+  "header_aliases": {
+    "date": ["Tran Date", "Txn Date", "Date"],
+    "ref": ["Chq No", "Cheque No", "Ref No"],
+    "narration": ["Particulars", "Description", "Tran Particulars"],
+    "debit": ["Debit", "Dr"],
+    "credit": ["Credit", "Cr"],
+    "balance": ["Balance", "Net Balance"],
+    "branch": ["Init Br", "Branch Name"]
+  },
+  "date_formats": ["%d-%m-%Y", "%d/%m/%Y", "%d %b %Y"],
+  "opening_keywords": ["OPENING BALANCE", "BROUGHT FORWARD"],
+  "narration_keywords": {
+    "emi": ["ACH/DR", "NACH/DR", "EMI DEBIT", "LOAN REPAYMENT", "AUTO DEBIT"],
+    "return": ["RETURN", "RET", "CHQ RET", "NACH RET", "ECS RET"],
+    "charge": ["CHQ RTN CHARGES", "RETURN CHARGES", "ECS BOUNCE CHG"]
+  }
+}
+

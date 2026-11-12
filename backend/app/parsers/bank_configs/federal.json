@@ -1,0 +1,23 @@
+{
+  "bank_name": "Federal Bank",
+  "bank_code": "FEDERAL",
+  "ifsc_prefixes": ["FDRL"],
+  "account_types": ["SAVINGS", "CURRENT"],
+  "amount_style": "TWO_COL",
+  "header_aliases": {
+    "date": ["Date", "Tran Date", "Txn Date"],
+    "narration": ["Description", "Particulars", "Narration"],
+    "ref": ["Cheque No", "Chq/Ref", "Ref No"],
+    "debit": ["Debit", "Withdrawal"],
+    "credit": ["Credit", "Deposit"],
+    "balance": ["Balance", "Total Balance"]
+  },
+  "date_formats": ["%d/%m/%Y", "%d-%m-%Y", "%d %b %Y"],
+  "opening_keywords": ["OPENING BALANCE", "B/F"],
+  "narration_keywords": {
+    "emi": ["FEDNET/LOAN", "NACH/DR", "EMI", "LOAN INSTALLMENT"],
+    "return": ["RETURN", "RET", "ECS RET", "NACH RET", "UNPAID"],
+    "charge": ["RETURN CHARGE", "CHQ RET CHG", "ECS RTN CHG"]
+  }
+}
+
