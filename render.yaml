@@ -1,48 +1,26 @@
 services:
-  # ==========================================
-  # 1. Backend FastAPI Service (Python)
-  # ==========================================
+  # ==============================================================================
+  # Active Service: banking-parser (Render Production Web Service)
+  # Multi-stage Containerized Banking Intelligence Engine + React Dashboard
+  # ==============================================================================
   - type: web
-    name: bank-statement-api
-    runtime: python
+    name: banking-parser
+    runtime: docker
     plan: free
-    rootDir: backend
-    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
-    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.8
+      - key: PORT
+        value: 10000
       - key: ENVIRONMENT
         value: production
       - key: SECRET_KEY
         generateValue: true
       - key: ENCRYPTION_KEY
-        value: "45071192004245607314794888115900"
+        value: "u2h_wXg-94xK8W_7D_K7Y1b6-M_d7s6y1A_z9L3m5_k="
       - key: CORS_ORIGINS
         value: "*"
       - key: STORAGE_PATH
         value: "./uploads"
       - key: DATABASE_URL
         value: "sqlite:///./bank_intelligence.db"
-
-  # ==========================================
-  # 2. Frontend React Dashboard (Static Site)
-  # ==========================================
-  - type: web
-    name: bank-statement-dashboard
-    runtime: static
-    plan: free
-    rootDir: frontend
-    buildCommand: "npm install && npm run build"
-    staticPublishPath: dist
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-    envVars:
-      - key: VITE_API_BASE_URL
-        fromService:
-          type: web
-          name: bank-statement-api
-          property: host
-

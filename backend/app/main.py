@@ -223,21 +223,6 @@ def create_application(
         "owner_user_id": app_obj.owner_user_id,
         "status": app_obj.status
     }
-    from app.core.encryption import mask_phone_number
-    cust = Customer(name=name, phone_masked=mask_phone_number(phone))
-    db.add(cust)
-    db.flush()
-    app_obj = LoanApplication(customer_id=cust.id, status="ACTIVE")
-    db.add(app_obj)
-    db.commit()
-    db.refresh(app_obj)
-    return {
-        "id": app_obj.id,
-        "customer_id": cust.id,
-        "customer_name": cust.name,
-        "phone_masked": cust.phone_masked,
-        "status": app_obj.status
-    }
 
 @app.get("/api/banks/supported", tags=["Bank Coverage"])
 def get_supported_banks():
@@ -263,4 +248,27 @@ def get_supported_banks():
         {"name": "Saraswat Co-operative Bank", "code": "SARASWAT", "phase": 2, "status": "In Validation"},
         {"name": "SVC Co-operative Bank", "code": "SVC", "phase": 2, "status": "In Validation"}
     ]
+
+# ==============================================================
+# Static SPA Frontend Mount for Render Unified Service
+# ==============================================================
+frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"))
+if os.path.exists(frontend_dist):
+    from fastapi.staticfiles import StaticFiles
+    from starlette.responses import FileResponse
+
+    assets_path = os.path.join(frontend_dist, "assets")
+    if os.path.exists(assets_path):
+        app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa_app(full_path: str):
+        # Don't intercept API or Docs
+        if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        file_path = os.path.join(frontend_dist, full_path)
+        if full_path and os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(frontend_dist, "index.html"))
+
 

@@ -68,46 +68,45 @@ git push -u origin main
 
 ---
 
-## ☁️ How to Deploy on Render.com (Make it Live for Employees)
+## ☁️ How to Deploy on Render.com (`banking-parser`)
 
-### Method 1: Automated 1-Click Deployment (Recommended)
-This repository includes a `render.yaml` Blueprint file that configures both the backend and frontend automatically.
-
-1. Go to [Render Dashboard](https://dashboard.render.com).
-2. Click **New +** → Select **Blueprint**.
-3. Connect your GitHub account and select your `bank-statement-intelligence` repository.
-4. Render will automatically detect `render.yaml` and show:
-   * **`bank-statement-api`** (Python Web Service)
-   * **`bank-statement-dashboard`** (React Static Site)
-5. Click **Apply**.
-6. Render will build and deploy both services! Once finished, you will receive a public HTTPS link (e.g. `https://bank-statement-dashboard.onrender.com`).
+### ⚠️ Why your repo is not showing in Render (and how to fix it):
+If you search on Render and cannot find your repository:
+1. **GitHub Permission Restriction**: On Render, click **"New +"** → **"Web Service"**. At the bottom of the repo list, click **"Configure Render on GitHub"** (or go to [GitHub App Permissions for Render](https://github.com/settings/installations)). Ensure **`Rishab0206/parser`** (or your new **`banking-parser`** repo) is selected under "Repository access".
+2. **Repository Name**: On GitHub, your repo is named **`parser`** (`https://github.com/Rishab0206/parser`). Search for `parser` in the Render search box!
+3. **Want a separate repository named `banking-parser`?**:
+   - Create a new repo on GitHub named `banking-parser`.
+   - Double click `PUSH_TO_BANKING_PARSER.bat` and select Option 2 to enter `https://github.com/Rishab0206/banking-parser.git`.
 
 ---
 
-### Method 2: Manual Setup on Render
+### 🚀 Active Render Profile: 1-Click Unified Web Service (Recommended)
+This repository contains a production **Active Render Profile** configured as **`banking-parser`**.
+It packages both the **React 18 Dashboard** and **FastAPI Python Parser Engine** into **one single unified service**.
 
-#### A. Deploy Backend Web Service
-1. In Render Dashboard, click **New +** → **Web Service**.
-2. Connect your GitHub repo.
-3. Configure the following:
-   * **Name**: `bank-statement-api`
-   * **Root Directory**: `backend`
-   * **Environment**: `Python 3`
-   * **Build Command**: `pip install -r requirements.txt`
-   * **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-   * **Plan**: `Free`
-4. Under **Environment Variables**, add:
-   * `ENVIRONMENT`: `production`
-   * `STORAGE_PATH`: `./uploads`
-   * `DATABASE_URL`: `sqlite:///./bank_intelligence.db`
-   * `ENCRYPTION_KEY`: `45071192004245607314794888115900`
-   * `CORS_ORIGINS`: `*`
-5. Click **Create Web Service**. Note down the live backend URL (e.g. `https://bank-statement-api.onrender.com`).
+#### Why this unified profile is best:
+* **Single Live URL** (e.g. `https://banking-parser.onrender.com`) for both the frontend UI and backend API.
+* **Zero CORS errors** and zero broken links.
+* **100% Free Tier Compatible**: Uses only 1 Render free service instead of 2.
 
-#### B. Deploy Frontend Static Site
-1. In Render Dashboard, click **New +** → **Static Site**.
-2. Connect the same GitHub repo.
-3. Configure the following:
+#### Deployment Steps:
+1. In [Render Dashboard](https://dashboard.render.com), click **New +** → **Web Service**.
+2. Select your repository (**`parser`** or **`banking-parser`**).
+3. Render will auto-detect the root **`Dockerfile`**.
+4. Set:
+   * **Name**: `banking-parser`
+   * **Region**: Oregon or Frankfurt
+   * **Instance Type**: `Free`
+5. Click **Create Web Service**.
+6. Render will build both the frontend and backend, run all OCR tools, and give you your live URL!
+
+---
+
+### 🛠️ Alternative Method: Deploy via Blueprint (`render.yaml`)
+1. In Render Dashboard, click **New +** → **Blueprint**.
+2. Connect your repo and select branch `main`.
+3. Render reads `render.yaml` and deploys the **`banking-parser`** profile automatically.
+4. Click **Apply**.
    * **Name**: `bank-statement-dashboard`
    * **Root Directory**: `frontend`
    * **Build Command**: `npm install && npm run build`
