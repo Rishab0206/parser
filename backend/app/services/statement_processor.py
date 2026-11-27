@@ -47,6 +47,7 @@ def process_statement_pipeline(
         raise ValueError(f"Statement {statement_id} not found")
 
     stmt.status = "PARSING"
+    stmt.processing_stage = "PDF_VERIFICATION"
     db.commit()
 
     try:
@@ -61,16 +62,23 @@ def process_statement_pipeline(
 
         if ext == "pdf":
             # Unlock PDF in memory
+            stmt.processing_stage = "DOCUMENT_UNLOCKING"
+            db.commit()
             doc, was_encrypted = unlock_pdf_in_memory(raw_bytes, pdf_password)
             if was_encrypted:
                 stmt.status = "PASSWORD_VERIFIED"
+                stmt.processing_stage = "TRANSACTION_EXTRACTION"
                 stmt.error_message = None
                 db.commit()
             stmt.page_count = len(doc)
+            stmt.processing_stage = "TRANSACTION_EXTRACTION"
+            db.commit()
             pages_data, used_ocr = extract_pdf_pages_data(doc, raw_bytes, pdf_password)
             doc.close()
         elif ext in ["xlsx", "xls", "csv"]:
             stmt.page_count = 1
+            stmt.processing_stage = "TRANSACTION_EXTRACTION"
+            db.commit()
             pages_data = extract_excel_or_csv(raw_bytes, stmt.file_name_original)
         else:
             raise CorruptedPdfException(f"Unsupported file format: {ext}")
@@ -102,6 +110,8 @@ def process_statement_pipeline(
                 db.flush()
 
         # 3. Parse transactions page by page using bank config
+        stmt.processing_stage = "TRANSACTION_CATEGORIZATION"
+        db.commit()
         all_transactions = []
         all_review_items = []
         failed_rows_count = 0
@@ -281,7 +291,9 @@ def process_statement_pipeline(
         for db_txn, mem_txn in db_transactions:
             mem_txn["id"] = db_txn.id
 
-        # 5. EMI Intelligence Detection
+        # 5. EMI Intelligence Detection & Banking Analysis
+        stmt.processing_stage = "BANKING_ANALYSIS"
+        db.commit()
         confirmed_emis, possible_emis, emi_attempts = detect_emi_intelligence(all_transactions)
 
         # 6. Return Reconciliation
@@ -481,6 +493,7 @@ def process_statement_pipeline(
             or failed_rows_count > 0
         )
         stmt.status = "PARSED_WITH_WARNINGS" if has_warnings else "PARSED"
+        stmt.processing_stage = "ANALYSIS_COMPLETED"
         stmt.error_message = (
             f"Balance reconciliation mismatch of {reconciliation_diff} detected."
             if reconciliation_status == "MISMATCH"

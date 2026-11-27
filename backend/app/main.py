@@ -39,6 +39,7 @@ with engine.connect() as conn:
         except Exception:
             pass
     for col_def in [
+        "processing_stage VARCHAR(50)",
         "opening_balance FLOAT",
         "closing_balance FLOAT",
         "expected_closing_balance FLOAT",

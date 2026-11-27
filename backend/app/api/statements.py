@@ -195,6 +195,7 @@ async def upload_statement(
         account_type=account_type or "SAVINGS",
         page_count=pdf_inspection["page_count"] if pdf_inspection else 1,
         status=initial_status,
+        processing_stage="PASSWORD_VERIFICATION" if is_encrypted_no_pwd else "FILE_UPLOADED",
         error_message=initial_err,
         uploaded_by=current_user.username
     )
@@ -297,6 +298,7 @@ def get_statement_status(
     return StatementStatusResponse(
         statement_id=stmt.id,
         status=stmt.status,
+        processing_stage=stmt.processing_stage,
         bank_name=stmt.bank_name,
         bank_detect_confidence=stmt.bank_detect_confidence or 0.0,
         account_no_masked=stmt.account_no_masked,

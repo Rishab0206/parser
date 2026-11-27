@@ -275,3 +275,43 @@ def test_9_empty_unreadable_statement_fails_not_zero(client):
     summary = client.get(f"/api/applications/{data['application_id']}/summary").json()
     assert summary["has_data"] is False
     assert summary["parsing_status"] == "PARSING_FAILED"
+
+
+def test_10_excel_bank_statement_parses_successfully(client):
+    import pandas as pd
+    df = pd.DataFrame(
+        [
+            ["01/10/2025", "OPENING BALANCE B/F", 0.0, 0.0, 50000.0],
+            ["05/10/2025", "NEFT/CR/ACME TRADERS/INV01", 0.0, 30000.0, 80000.0],
+            ["10/10/2025", "NACH-DR-HDFC LOAN EMI", 10000.0, 0.0, 70000.0],
+        ],
+        columns=["Date", "Narration", "Debit", "Credit", "Balance"],
+    )
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False)
+    xlsx_bytes = buf.getvalue()
+
+    insp = client.post(
+        "/api/statements/inspect",
+        files={"file": ("statement.xlsx", xlsx_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert insp.status_code == 200
+    assert insp.json()["is_valid"] is True
+    assert insp.json()["is_encrypted"] is False
+
+    up = client.post(
+        "/api/statements/upload",
+        files={"file": ("statement.xlsx", xlsx_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        data={"application_id": "new", "account_type": "CURRENT"},
+    )
+    assert up.status_code == 200
+    data = up.json()
+    assert data["status"] in ["PARSED", "PARSED_WITH_WARNINGS"]
+
+    st = client.get(f"/api/statements/{data['statement_id']}/status").json()
+    assert st["rows_parsed"] == 3
+    assert st["opening_balance"] == 50000.0
+    assert st["closing_balance"] == 70000.0
+    assert st["reconciliation_status"] == "MATCHED"
+    assert st["processing_stage"] == "ANALYSIS_COMPLETED"

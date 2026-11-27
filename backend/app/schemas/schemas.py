@@ -18,6 +18,7 @@ class CustomerResponse(CustomerBase):
 class StatementStatusResponse(BaseModel):
     statement_id: str
     status: str
+    processing_stage: Optional[str] = None
     bank_name: Optional[str] = None
     bank_detect_confidence: float = 0.0
     account_no_masked: Optional[str] = None

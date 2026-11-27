@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { MonthlySummary } from '../api/abb';
 import { formatCurrency, formatDate, formatPercentage } from '../utils/format';
 import { Calendar, TrendingUp, TrendingDown, Info, X } from 'lucide-react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 
 interface MonthlyAbbTableProps {
   data: MonthlySummary[];
@@ -19,7 +20,34 @@ export const MonthlyAbbTable: React.FC<MonthlyAbbTableProps> = ({ data }) => {
   }
 
   return (
-    <>
+    <div className="space-y-4">
+      {/* Monthly Credits vs Debits & Closing Balance Chart */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h4 className="text-xs font-bold text-slate-800">Monthly Credits, Debits &amp; Closing Balance</h4>
+            <p className="text-[11px] text-slate-400">Verified monthly cash flow &amp; month-end liquidity</p>
+          </div>
+        </div>
+        <div className="h-56 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 5, right: 12, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748b' }} />
+              <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+              <Tooltip
+                formatter={(value: any) => formatCurrency(Number(value))}
+                contentStyle={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}
+              />
+              <Legend wrapperStyle={{ fontSize: '11px' }} />
+              <Bar dataKey="gross_credit" name="Monthly Credits" fill="#2563eb" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="total_debit" name="Monthly Debits" fill="#64748b" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="month_end_balance" name="Closing Balance" fill="#7c3aed" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left">
@@ -133,7 +161,7 @@ export const MonthlyAbbTable: React.FC<MonthlyAbbTableProps> = ({ data }) => {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 };
 

@@ -76,6 +76,10 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               <option value="ALL">All Categories</option>
               <option value="BUSINESS_RECEIPT">Business Receipt</option>
               <option value="GENERAL_EXPENSE">General Expense</option>
+              <option value="EMI">EMI / Loan</option>
+              <option value="RETURN">Return / Bounce</option>
+              <option value="CASH_DEPOSIT">Cash Deposits</option>
+              <option value="CASH_WITHDRAWAL">Cash Withdrawals</option>
               <option value="LOAN_DISBURSAL">Loan Disbursal</option>
               <option value="FD_MATURITY">FD Maturity</option>
               <option value="REVERSAL_REFUND">Reversal/Refund</option>
@@ -83,6 +87,37 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               <option value="BANK_CHARGES">Bank Charges</option>
             </select>
           </div>
+        </div>
+
+        {/* Quick Filter Pills */}
+        <div className="px-3.5 py-2 border-b border-slate-200 bg-white flex flex-wrap items-center gap-1.5 text-[11px]">
+          {[
+            { label: 'All Transactions', cat: 'ALL', ch: 'ALL' },
+            { label: 'EMI / Loans', cat: 'EMI', ch: 'ALL' },
+            { label: 'ACH / NACH / ECS', cat: 'ALL', ch: 'NACH' },
+            { label: 'Returns / Bounces', cat: 'RETURN', ch: 'ALL' },
+            { label: 'Cash Deposits', cat: 'CASH_DEPOSIT', ch: 'ALL' },
+            { label: 'Cash Withdrawals', cat: 'CASH_WITHDRAWAL', ch: 'ALL' },
+          ].map((pill) => {
+            const active = category === pill.cat && channel === pill.ch;
+            return (
+              <button
+                key={pill.label}
+                type="button"
+                onClick={() => {
+                  onCategoryChange(pill.cat);
+                  onChannelChange(pill.ch);
+                }}
+                className={`px-2.5 py-1 rounded-full font-medium transition-colors ${
+                  active
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {pill.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Table */}

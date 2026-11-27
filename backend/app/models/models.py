@@ -90,6 +90,7 @@ class Statement(Base):
     page_count = Column(Integer, default=1)
     parser_version = Column(String(20), default="2.0.0")
     status = Column(String(30), default="FILE_UPLOADED")  # FILE_UPLOADED, PASSWORD_REQUIRED, PASSWORD_VERIFIED, PARSING, PARSED, PARSED_WITH_WARNINGS, PARSING_FAILED, INVALID_FILE
+    processing_stage = Column(String(50), default="FILE_UPLOADED")
     error_message = Column(Text, nullable=True)
     opening_balance = Column(Float, nullable=True)
     closing_balance = Column(Float, nullable=True)

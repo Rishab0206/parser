@@ -26,6 +26,7 @@ export interface StatementUploadResponse {
 export interface StatementStatus {
   statement_id: string;
   status: string;
+  processing_stage?: string;
   bank_name?: string;
   bank_detect_confidence: number;
   account_no_masked?: string;

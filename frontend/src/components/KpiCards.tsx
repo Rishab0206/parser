@@ -13,69 +13,89 @@ interface KpiCardsProps {
 
 export const KpiCards: React.FC<KpiCardsProps> = ({ summary, onReviewClick }) => {
   const hasData = summary.has_data;
+  const fmtOrNa = (val: number | null | undefined) =>
+    hasData && val !== null && val !== undefined ? formatCurrency(val) : 'Not Available';
+  const numOrNa = (val: number | null | undefined) =>
+    hasData && val !== null && val !== undefined ? String(val) : 'Not Available';
+
+  const netCashFlow = summary.net_cash_flow ?? 0;
+  const emiBounces = summary.emi_bounce_count ?? 0;
+  const negDays = summary.total_negative_days ?? 0;
+  const internalExcluded = summary.internal_transfers_excluded ?? 0;
 
   const cards = [
     {
-      title: "Total Business Turnover",
-      value: hasData ? formatCurrency(summary.total_business_turnover) : "—",
-      subtext: hasData ? `Excl. internal trf: ${formatCurrency(summary.internal_transfers_excluded)}` : "Upload statement",
-      icon: TrendingUp,
-      color: "text-blue-600 bg-blue-50 border-blue-100",
+      title: "Total Credits",
+      value: fmtOrNa(summary.total_credits),
+      subtext: hasData ? "Verified gross inflows" : "Not Available",
+      icon: ArrowUpRight,
+      color: "text-emerald-600 bg-emerald-50 border-emerald-100",
     },
     {
-      title: "Avg Monthly Turnover",
-      value: hasData ? formatCurrency(summary.avg_monthly_turnover) : "—",
-      subtext: hasData ? "Verified business sales" : "Upload statement",
-      icon: DollarSign,
-      color: "text-indigo-600 bg-indigo-50 border-indigo-100",
-    },
-    {
-      title: "Total Debit",
-      value: hasData ? formatCurrency(summary.total_debit) : "—",
-      subtext: hasData ? "Expenses & payouts" : "Upload statement",
+      title: "Total Debits",
+      value: fmtOrNa(summary.total_debit),
+      subtext: hasData ? "Expenses & payouts" : "Not Available",
       icon: TrendingDown,
       color: "text-slate-600 bg-slate-50 border-slate-100",
     },
     {
-      title: "Net Cash Flow",
-      value: hasData ? formatCurrency(summary.net_cash_flow) : "—",
-      subtext: hasData ? (summary.net_cash_flow >= 0 ? "Positive operating flow" : "Negative net flow") : "Upload statement",
-      icon: summary.net_cash_flow >= 0 ? ArrowUpRight : ArrowDownRight,
-      color: summary.net_cash_flow >= 0 ? "text-emerald-600 bg-emerald-50 border-emerald-100" : "text-rose-600 bg-rose-50 border-rose-100",
+      title: "Closing Balance",
+      value: fmtOrNa(summary.closing_balance),
+      subtext: hasData && summary.opening_balance !== null && summary.opening_balance !== undefined
+        ? `Opening: ${formatCurrency(summary.opening_balance)}`
+        : "Not Available",
+      icon: Wallet,
+      color: "text-violet-600 bg-violet-50 border-violet-100",
     },
     {
-      title: "Avg Monthly ABB",
-      value: hasData ? formatCurrency(summary.avg_monthly_abb) : "—",
-      subtext: hasData ? "Daily EOD carry-forward" : "Upload statement",
+      title: "Total Transactions",
+      value: numOrNa(summary.total_transactions),
+      subtext: hasData ? "Extracted & verified rows" : "Not Available",
+      icon: DollarSign,
+      color: "text-blue-600 bg-blue-50 border-blue-100",
+    },
+    {
+      title: "Monthly Average Balance",
+      value: fmtOrNa(summary.avg_monthly_abb),
+      subtext: hasData ? "Daily EOD carry-forward" : "Not Available",
       icon: Wallet,
       color: "text-cyan-600 bg-cyan-50 border-cyan-100",
     },
     {
+      title: "Monthly Turnover",
+      value: fmtOrNa(summary.avg_monthly_turnover),
+      subtext: hasData ? `Total: ${fmtOrNa(summary.total_business_turnover)}` : "Not Available",
+      icon: TrendingUp,
+      color: "text-indigo-600 bg-indigo-50 border-indigo-100",
+    },
+    {
+      title: "Net Cash Flow",
+      value: fmtOrNa(summary.net_cash_flow),
+      subtext: hasData ? (netCashFlow >= 0 ? "Positive operating flow" : "Negative net flow") : "Not Available",
+      icon: netCashFlow >= 0 ? ArrowUpRight : ArrowDownRight,
+      color: netCashFlow >= 0 ? "text-emerald-600 bg-emerald-50 border-emerald-100" : "text-rose-600 bg-rose-50 border-rose-100",
+    },
+    {
       title: "EMI Bounce / ECS Returns",
-      value: hasData ? String(summary.emi_bounce_count) : "—",
-      subtext: hasData ? `${summary.total_ecs_returns} return records verified` : "Upload statement",
+      value: numOrNa(summary.emi_bounce_count),
+      subtext: hasData ? `${summary.total_ecs_returns ?? 0} return records verified` : "Not Available",
       icon: AlertOctagon,
-      color: (hasData && summary.emi_bounce_count > 0) ? "text-rose-600 bg-rose-50 border-rose-200" : "text-slate-600 bg-slate-50 border-slate-100",
+      color: (hasData && emiBounces > 0) ? "text-rose-600 bg-rose-50 border-rose-200" : "text-slate-600 bg-slate-50 border-slate-100",
     },
     {
       title: "EMI-to-Turnover Ratio",
-      value: hasData ? formatPercentage(summary.emi_to_turnover_ratio) : "—",
-      subtext: hasData ? "Verified EMI burden vs turnover" : "Upload statement",
+      value: hasData && summary.emi_to_turnover_ratio !== null && summary.emi_to_turnover_ratio !== undefined
+        ? formatPercentage(summary.emi_to_turnover_ratio)
+        : "Not Available",
+      subtext: hasData ? "Verified EMI burden vs turnover" : "Not Available",
       icon: Percent,
       color: "text-violet-600 bg-violet-50 border-violet-100",
       badge: "Not FOIR"
     },
     {
-      title: "Negative Days",
-      value: hasData ? String(summary.total_negative_days) : "—",
-      subtext: hasData ? "Days closing below ₹0" : "Upload statement",
-      icon: CalendarX,
-      color: (hasData && summary.total_negative_days > 0) ? "text-amber-600 bg-amber-50 border-amber-200" : "text-slate-600 bg-slate-50 border-slate-100",
-    },
-    {
       title: "Review Queue",
-      value: hasData ? String(summary.review_queue_count) : "—",
-      subtext: hasData ? (summary.review_queue_count > 0 ? "Requires underwriter action" : "All clean") : "Upload statement",
+      value: String(summary.review_queue_count ?? 0),
+      subtext: hasData ? (summary.review_queue_count > 0 ? "Requires underwriter action" : "All clean") : "Not Available",
       icon: AlertTriangle,
       color: (hasData && summary.review_queue_count > 0) ? "text-amber-700 bg-amber-100 border-amber-300 ring-1 ring-amber-400" : "text-slate-600 bg-slate-50 border-slate-100",
       onClick: onReviewClick,
@@ -92,8 +112,8 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ summary, onReviewClick }) =>
             <div
               key={i}
               onClick={c.onClick}
-              className={`bg-white rounded-xl p-4 border border-slate-200 shadow-sm relative transition-all ${
-                c.isAction ? 'cursor-pointer hover:border-amber-400 hover:shadow-md' : ''
+              className={`bg-white/90 backdrop-blur-xs rounded-xl p-4 border border-slate-200 shadow-sm relative transition-all ${
+                c.isAction ? 'cursor-pointer hover:border-amber-400 hover:shadow-md' : 'hover:border-blue-200'
               }`}
             >
               <div className="flex items-center justify-between mb-2">
@@ -118,11 +138,20 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ summary, onReviewClick }) =>
         })}
       </div>
 
-      {hasData && summary.internal_transfers_excluded > 0 && (
+      {hasData && internalExcluded > 0 && (
         <div className="flex items-center gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs mb-4">
           <Info className="w-4 h-4 text-amber-600 flex-shrink-0" />
           <span>
-            <strong>Internal Transfers Excluded:</strong> {formatCurrency(summary.internal_transfers_excluded)} reconciled across applicant accounts and excluded from Consolidated Business Turnover.
+            <strong>Internal Transfers Excluded:</strong> {formatCurrency(internalExcluded)} reconciled across applicant accounts and excluded from Consolidated Business Turnover.
+          </span>
+        </div>
+      )}
+
+      {hasData && negDays > 0 && (
+        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-xs mb-4">
+          <CalendarX className="w-4 h-4 text-rose-600 flex-shrink-0" />
+          <span>
+            <strong>Overdraft / Negative Balance Alert:</strong> {negDays} day(s) closed below ₹0 during the statement period.
           </span>
         </div>
       )}
