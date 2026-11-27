@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { UploadCloud, FileText, Lock, CheckCircle2, AlertCircle, Loader2, ArrowRight, Eye, EyeOff, KeyRound, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { UploadCloud, FileText, Lock, CheckCircle2, AlertCircle, Loader2, ArrowRight, Eye, EyeOff, KeyRound, ShieldCheck, AlertTriangle, X } from 'lucide-react';
 import { uploadStatement, getStatementStatus, getApplications, unlockStatement, inspectStatementFile, PdfInspectionResult } from '../api/statements';
 import { useNavigate } from 'react-router-dom';
 
@@ -266,8 +266,8 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm max-w-2xl mx-auto">
-      <h2 className="text-lg font-bold text-slate-900 mb-1">Upload Bank Statement</h2>
+    <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm w-full">
+      <h2 className="text-base font-bold text-slate-900 mb-1">Upload Bank Statement</h2>
       <p className="text-xs text-slate-500 mb-5">
         Supports PDF, scanned PDF, Excel (.xlsx, .xls), and CSV up to 50MB. Passwords are held in memory only during parsing and cleared immediately.
       </p>
@@ -536,9 +536,27 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
               <UploadCloud className="w-6 h-6" />
             </div>
             {file ? (
-              <div>
-                <p className="font-semibold text-sm text-slate-800">{file.name}</p>
-                <p className="text-xs text-slate-400 mt-0.5">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+              <div className="flex items-center justify-center gap-3">
+                <div className="text-left">
+                  <p className="font-semibold text-sm text-slate-800">{file.name}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setFile(null);
+                    setInspectionResult(null);
+                    setIsProtected(false);
+                    setPassword('');
+                    setErrorMsg(null);
+                    setStructuredError(null);
+                  }}
+                  className="p-1.5 rounded-full bg-white border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-300 shadow-xs"
+                  title="Remove file"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             ) : (
               <div>
