@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { UploadCloud, FileText, Lock, CheckCircle2, AlertCircle, Loader2, ArrowRight } from 'lucide-react';
-import { uploadStatement, getStatementStatus, getApplications, createApplication } from '../api/statements';
+import { UploadCloud, FileText, Lock, CheckCircle2, AlertCircle, Loader2, ArrowRight, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { uploadStatement, getStatementStatus, getApplications, createApplication, unlockStatement } from '../api/statements';
 import { useNavigate } from 'react-router-dom';
 
 interface UploadDropzoneProps {
@@ -18,6 +18,14 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
   const [password, setPassword] = useState<string>('');
   const [isProtected, setIsProtected] = useState<boolean>(false);
   
+  // Pending password unlock state
+  const [pendingUnlockStatementId, setPendingUnlockStatementId] = useState<string | null>(null);
+  const [unlockPassword, setUnlockPassword] = useState<string>('');
+  const [showUnlockPassword, setShowUnlockPassword] = useState<boolean>(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [isUnlocking, setIsUnlocking] = useState<boolean>(false);
+  const [showPasswordHints, setShowPasswordHints] = useState<boolean>(false);
+
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [stage, setStage] = useState<string>('');
   const [parseResult, setParseResult] = useState<any>(null);
@@ -55,6 +63,28 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
     }
   });
 
+  const handleUnlockSubmit = async () => {
+    if (!pendingUnlockStatementId || !unlockPassword.trim()) {
+      setUnlockError("Please enter your account / PDF password.");
+      return;
+    }
+
+    setIsUnlocking(true);
+    setUnlockError(null);
+
+    try {
+      const result = await unlockStatement(pendingUnlockStatementId, unlockPassword.trim());
+      setIsUnlocking(false);
+      setPendingUnlockStatementId(null);
+      setUnlockPassword('');
+      setParseResult(result);
+      if (onUploadSuccess) onUploadSuccess(result.statement_id);
+    } catch (err: any) {
+      setIsUnlocking(false);
+      setUnlockError(err.message || "Incorrect password. Please verify and try again.");
+    }
+  };
+
   const handleUpload = async () => {
     if (!file) {
       setErrorMsg("Please select a bank statement file to upload.");
@@ -69,6 +99,8 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
     setErrorMsg(null);
     setStructuredError(null);
     setParseResult(null);
+    setPendingUnlockStatementId(null);
+    setUnlockError(null);
 
     // Multi-stage progress animation
     setStage("Extracting pages & checking encryption...");
@@ -87,6 +119,14 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
         localStorage.setItem('current_customer_app_id', resp.application_id);
       }
 
+      // Check if statement requires password
+      if (resp.status === 'PASSWORD_REQUIRED') {
+        setIsUploading(false);
+        setPendingUnlockStatementId(resp.statement_id);
+        setUnlockError(resp.message || "This bank statement is password protected. Please enter the password.");
+        return;
+      }
+
       setStage("Detecting bank & parsing transaction table...");
       
       // Poll statement status
@@ -100,16 +140,26 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
             setIsUploading(false);
             setParseResult(status);
             if (onUploadSuccess) onUploadSuccess(resp.statement_id);
+          } else if (status.status === 'PASSWORD_REQUIRED') {
+            clearInterval(interval);
+            setIsUploading(false);
+            setPendingUnlockStatementId(resp.statement_id);
+            setUnlockError(status.error_message || "This bank statement is password protected. Please enter the password.");
           } else if (status.status === 'FAILED') {
             clearInterval(interval);
             setIsUploading(false);
             const errMsg = status.error_message || "Statement parsing failed.";
-            setErrorMsg(errMsg);
-            setStructuredError({
-              error_code: "STATEMENT_PARSE_FAILED",
-              message: errMsg,
-              details: status.error_report || { statement_id: status.statement_id }
-            });
+            if (errMsg.toLowerCase().includes("password")) {
+              setPendingUnlockStatementId(resp.statement_id);
+              setUnlockError(errMsg);
+            } else {
+              setErrorMsg(errMsg);
+              setStructuredError({
+                error_code: "STATEMENT_PARSE_FAILED",
+                message: errMsg,
+                details: status.error_report || { statement_id: status.statement_id }
+              });
+            }
           } else {
             if (attempts === 2) setStage("Classifying transactions & detecting EMIs...");
             if (attempts === 4) setStage("Reconciling returns & calculating monthly ABB...");
@@ -128,6 +178,17 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
 
     } catch (err: any) {
       setIsUploading(false);
+      if (
+        err.error_code === 'PASSWORD_REQUIRED' ||
+        err.error_code === 'INCORRECT_PASSWORD' ||
+        (err.message && err.message.toLowerCase().includes('password'))
+      ) {
+        if (err.details?.statement_id) {
+          setPendingUnlockStatementId(err.details.statement_id);
+          setUnlockError(err.message);
+          return;
+        }
+      }
       setErrorMsg(err.message || "Upload failed");
       setStructuredError({
         error_code: err.error_code || "UPLOAD_FAILED",
@@ -182,8 +243,129 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
         </div>
       )}
 
-      {/* Result Card */}
-      {parseResult ? (
+      {/* Password Unlock Card */}
+      {pendingUnlockStatementId ? (
+        <div className="p-6 rounded-xl bg-amber-50/80 border border-amber-300 text-slate-800 space-y-4 shadow-sm animate-in fade-in duration-200">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700 shrink-0 mt-0.5">
+              <Lock className="w-5 h-5" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-bold text-amber-950 flex items-center gap-2">
+                Password-Protected Statement Detected
+              </h3>
+              <p className="text-xs text-amber-900 mt-0.5">
+                <strong>{file ? file.name : "Uploaded statement"}</strong> is encrypted with an account password. Please enter the password below to unlock and run the complete verified financial analysis.
+              </p>
+            </div>
+          </div>
+
+          {unlockError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-900 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span className="font-medium">{unlockError}</span>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-slate-700">
+              Account / Statement Password
+            </label>
+            <div className="relative">
+              <input
+                type={showUnlockPassword ? "text" : "password"}
+                value={unlockPassword}
+                onChange={(e) => {
+                  setUnlockPassword(e.target.value);
+                  setUnlockError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleUnlockSubmit();
+                }}
+                placeholder="Enter password (e.g. DOB in DDMMYYYY, PAN, or Name+DOB)"
+                autoFocus
+                className="w-full px-3 py-2.5 pr-10 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 font-mono shadow-xs"
+              />
+              <button
+                type="button"
+                onClick={() => setShowUnlockPassword(!showUnlockPassword)}
+                className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                title={showUnlockPassword ? "Hide password" : "Show password"}
+              >
+                {showUnlockPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Passwords are used in RAM only for instant extraction and are never saved to disk or database.
+            </p>
+          </div>
+
+          {/* Quick Indian Bank Password Hints */}
+          <div className="bg-white/80 rounded-lg p-3 text-xs border border-amber-200 shadow-xs">
+            <button
+              type="button"
+              onClick={() => setShowPasswordHints(!showPasswordHints)}
+              className="w-full flex items-center justify-between text-amber-900 font-semibold text-[11px]"
+            >
+              <span className="flex items-center gap-1.5">
+                <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                Indian Bank Password Formats (HDFC, SBI, ICICI, Kotak, Axis)
+              </span>
+              <span className="text-amber-700 hover:text-amber-900 text-[10px] underline">
+                {showPasswordHints ? "Hide hints ▲" : "View hints ▼"}
+              </span>
+            </button>
+
+            {showPasswordHints && (
+              <div className="mt-2.5 pt-2 border-t border-amber-200 text-[11px] text-amber-950 space-y-1.5 font-normal">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  <div><strong>HDFC Bank:</strong> Customer ID (9 digits) OR DOB (DDMMYYYY)</div>
+                  <div><strong>State Bank of India (SBI):</strong> DOB (DDMMYYYY) + Last 5 digits of mobile</div>
+                  <div><strong>ICICI Bank:</strong> First 4 letters of name (lowercase) + DOB (DDMM)</div>
+                  <div><strong>Axis Bank:</strong> First 4 letters of name (CAPS) + Last 4 digits of account</div>
+                  <div><strong>Kotak Bank:</strong> CRN number OR Date of birth (DDMMYYYY)</div>
+                  <div><strong>Canara / BOB:</strong> Customer ID OR First 4 letters + DDMM</div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button
+              type="button"
+              disabled={isUnlocking}
+              onClick={() => {
+                setPendingUnlockStatementId(null);
+                setUnlockPassword('');
+                setUnlockError(null);
+                setIsUploading(false);
+              }}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-white border border-slate-300 rounded-lg"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              disabled={isUnlocking || !unlockPassword.trim()}
+              onClick={handleUnlockSubmit}
+              className="px-5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50 rounded-lg flex items-center gap-1.5 shadow-sm transition-colors"
+            >
+              {isUnlocking ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Unlocking & Running Analysis...</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Unlock & Start Analysis</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      ) : parseResult ? (
         <div className="p-5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">

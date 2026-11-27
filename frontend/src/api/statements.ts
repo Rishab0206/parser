@@ -85,6 +85,16 @@ export function getStatementStatus(statementId: string): Promise<StatementStatus
   return apiFetch<StatementStatus>(`/api/statements/${statementId}/status`);
 }
 
+export function unlockStatement(
+  statementId: string,
+  password: string
+): Promise<any> {
+  return apiFetch<any>(`/api/statements/${statementId}/unlock`, {
+    method: 'POST',
+    body: JSON.stringify({ password })
+  });
+}
+
 export function getSupportedBanks(): Promise<any[]> {
   return apiFetch<any[]>('/api/banks/supported');
 }

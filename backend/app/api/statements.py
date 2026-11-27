@@ -1,6 +1,7 @@
 import os
 import hashlib
 from typing import Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 
@@ -8,6 +9,7 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.core.security import get_current_user, require_roles, CurrentUser, Role
 from app.core.encryption import encrypt_data
+from app.core.errors import PasswordRequiredException, InvalidPasswordException
 from app.models.models import Statement, LoanApplication, Customer, AuditLog
 from app.schemas.schemas import StatementStatusResponse
 from app.services.statement_processor import process_statement_pipeline
@@ -51,6 +53,24 @@ async def upload_statement(
         ).first()
 
         if existing_stmt:
+            # If statement previously required a password or failed, and user is providing password or re-uploading
+            if (existing_stmt.status in ["PASSWORD_REQUIRED", "FAILED"] or pdf_password) and existing_stmt.status != "PARSED":
+                logger.info(f"Re-processing existing statement {existing_stmt.id} with new password/attempt")
+                try:
+                    process_statement_pipeline(existing_stmt.id, db, pdf_password)
+                except (PasswordRequiredException, InvalidPasswordException) as pwd_err:
+                    logger.warning(f"Password required on re-process: {pwd_err}")
+                except Exception as p_err:
+                    logger.warning(f"Re-process attempt failed: {p_err}")
+                db.refresh(existing_stmt)
+                return {
+                    "statement_id": existing_stmt.id,
+                    "application_id": existing_stmt.application_id,
+                    "status": existing_stmt.status,
+                    "error_message": existing_stmt.error_message,
+                    "file_name": existing_stmt.file_name_original,
+                    "is_duplicate": False
+                }
             return {
                 "statement_id": existing_stmt.id,
                 "application_id": existing_stmt.application_id,
@@ -126,15 +146,19 @@ async def upload_statement(
         logger.info(f"Celery queue not reachable ({e}), executing synchronously or via BackgroundTasks")
         try:
             process_statement_pipeline(new_stmt.id, db, pdf_password)
+        except (PasswordRequiredException, InvalidPasswordException) as pwd_err:
+            logger.warning(f"Password required for statement {new_stmt.id}: {pwd_err}")
         except Exception as parse_err:
             logger.error(f"Sync parsing error: {parse_err}")
 
+    db.refresh(new_stmt)
     db.refresh(app_obj)
     return {
         "statement_id": new_stmt.id,
         "application_id": app_obj.id,
         "customer_name": app_obj.customer.name if app_obj.customer else "Applicant",
         "status": new_stmt.status,
+        "error_message": new_stmt.error_message,
         "file_name": file.filename
     }
 
@@ -191,4 +215,63 @@ def get_statement_status(
         error_message=stmt.error_message,
         error_report=error_report
     )
+
+class UnlockStatementRequest(BaseModel):
+    password: str
+
+@router.post("/{statement_id}/unlock")
+def unlock_statement_endpoint(
+    statement_id: str,
+    payload: UnlockStatementRequest,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_roles([Role.ADMIN, Role.UNDERWRITER, Role.SALES_DSA]))
+):
+    """
+    Unlocks a password-protected statement and runs the full analysis pipeline:
+    - Decrypts and authenticates PDF with password
+    - Bank & account metadata detection
+    - Transaction parsing & confidence scoring
+    - EMI detection & loan analysis
+    - Return & bounce analysis (ACH/ECS)
+    - Monthly ABB & turnover calculation
+    - Customer history update
+    Never stores or logs the password.
+    """
+    stmt = db.query(Statement).filter(Statement.id == statement_id).first()
+    if not stmt:
+        raise HTTPException(status_code=404, detail="Statement not found")
+
+    if current_user.role != Role.ADMIN and stmt.owner_user_id and stmt.owner_user_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this statement.")
+
+    clean_pwd = payload.password.strip() if payload.password else ""
+    if not clean_pwd:
+        raise HTTPException(status_code=400, detail="Password cannot be empty. Please enter your account/PDF password.")
+
+    try:
+        result = process_statement_pipeline(statement_id, db, pdf_password=clean_pwd)
+        db.refresh(stmt)
+        return {
+            "statement_id": stmt.id,
+            "status": stmt.status,
+            "bank_name": stmt.bank_name,
+            "bank_confidence": stmt.bank_detect_confidence,
+            "account_no_masked": stmt.account_no_masked,
+            "account_type": stmt.account_type,
+            "page_count": stmt.page_count,
+            "rows_parsed": result.get("rows_parsed", 0),
+            "failed_rows_count": result.get("failed_rows_count", 0),
+            "confidence": result.get("file_confidence", 0.0),
+            "review_queue_count": result.get("review_queue_count", 0),
+            "version_no": result.get("version_no", 1),
+            "message": "Statement unlocked and analyzed successfully!"
+        }
+    except InvalidPasswordException:
+        raise HTTPException(status_code=400, detail="Incorrect password. Please verify the account/PDF password and try again.")
+    except PasswordRequiredException:
+        raise HTTPException(status_code=400, detail="This file is password protected. Please provide the PDF password.")
+    except Exception as e:
+        logger.error(f"Error unlocking statement {statement_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to process statement: {str(e)}")
+
 

@@ -6,6 +6,7 @@ from datetime import datetime, date
 
 from app.core.encryption import encrypt_data, decrypt_data, encrypt_string, mask_account_number
 from app.core.logging import logger
+from app.core.errors import PasswordRequiredException, InvalidPasswordException
 from app.services.pdf_unlock import unlock_pdf_in_memory
 from app.services.pdf_extract import extract_pdf_pages_data, extract_excel_or_csv
 from app.services.bank_detect import detect_bank_and_account
@@ -420,6 +421,13 @@ def process_statement_pipeline(
             "version_no": new_version_no
         }
 
+    except (PasswordRequiredException, InvalidPasswordException) as pwd_err:
+        db.rollback()
+        stmt.status = "PASSWORD_REQUIRED"
+        stmt.error_message = pwd_err.message if hasattr(pwd_err, 'message') else str(pwd_err)
+        db.commit()
+        logger.warning(f"Statement {stmt.id} requires password: {stmt.error_message}")
+        raise
     except Exception as e:
         db.rollback()
         stmt.status = "FAILED"

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { CustomerHistoryItem } from '../api/statements';
-import { Search, Eye, Download, Building, Calendar, AlertTriangle, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Search, Eye, Download, Building, Calendar, AlertTriangle, ShieldCheck, CheckCircle2, Lock } from 'lucide-react';
 import { formatCurrency } from '../utils/format';
 
 interface CustomerHistoryTableProps {
@@ -197,16 +197,20 @@ export const CustomerHistoryTable: React.FC<CustomerHistoryTableProps> = ({
                       <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold ${
                         item.status === 'PARSED'
                           ? 'bg-emerald-100 text-emerald-800'
+                          : item.status === 'PASSWORD_REQUIRED'
+                          ? 'bg-amber-100 text-amber-900 border border-amber-300'
                           : item.status === 'NEEDS_REVIEW'
                           ? 'bg-amber-100 text-amber-800'
                           : 'bg-slate-100 text-slate-700'
                       }`}>
                         {item.status === 'PARSED' ? (
                           <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        ) : item.status === 'PASSWORD_REQUIRED' ? (
+                          <Lock className="w-3 h-3 text-amber-700" />
                         ) : (
                           <AlertTriangle className="w-3 h-3 text-amber-600" />
                         )}
-                        {item.status}
+                        {item.status === 'PASSWORD_REQUIRED' ? 'LOCKED (PWD)' : item.status}
                       </span>
                     </td>
 
