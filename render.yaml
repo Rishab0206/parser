@@ -7,11 +7,10 @@ services:
     name: banking-parser
     runtime: docker
     plan: free
+    branch: main
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     envVars:
-      - key: PORT
-        value: 10000
       - key: ENVIRONMENT
         value: production
       - key: SECRET_KEY
