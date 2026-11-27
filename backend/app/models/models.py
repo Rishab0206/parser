@@ -89,8 +89,15 @@ class Statement(Base):
     period_to = Column(Date, nullable=True)
     page_count = Column(Integer, default=1)
     parser_version = Column(String(20), default="2.0.0")
-    status = Column(String(30), default="UPLOADED")  # UPLOADED, PARSING, PARSED, NEEDS_REVIEW, FAILED
+    status = Column(String(30), default="FILE_UPLOADED")  # FILE_UPLOADED, PASSWORD_REQUIRED, PASSWORD_VERIFIED, PARSING, PARSED, PARSED_WITH_WARNINGS, PARSING_FAILED, INVALID_FILE
     error_message = Column(Text, nullable=True)
+    opening_balance = Column(Float, nullable=True)
+    closing_balance = Column(Float, nullable=True)
+    expected_closing_balance = Column(Float, nullable=True)
+    reconciliation_diff = Column(Float, nullable=True)
+    reconciliation_status = Column(String(30), nullable=True)  # MATCHED, MISMATCH, UNAVAILABLE
+    total_credits = Column(Float, nullable=True)
+    total_debits = Column(Float, nullable=True)
     uploaded_by = Column(String(100), default="system")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 

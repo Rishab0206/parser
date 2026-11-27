@@ -1,10 +1,23 @@
 import { apiFetch } from './client';
 
+export interface PdfInspectionResult {
+  is_valid: boolean;
+  is_encrypted: boolean;
+  is_scanned: boolean;
+  has_extractable_text: boolean;
+  page_count: number;
+  file_status: 'FILE_UPLOADED' | 'PASSWORD_REQUIRED' | 'INVALID_FILE';
+  classification: string;
+  message: string;
+}
+
 export interface StatementUploadResponse {
   statement_id: string;
   application_id?: string;
   customer_name?: string;
   status: string;
+  is_encrypted?: boolean;
+  error_message?: string;
   file_name?: string;
   message?: string;
   is_duplicate?: boolean;
@@ -17,11 +30,22 @@ export interface StatementStatus {
   bank_detect_confidence: number;
   account_no_masked?: string;
   account_type: string;
+  ifsc?: string;
+  customer_name?: string;
+  period_from?: string;
+  period_to?: string;
   page_count: number;
   rows_parsed: number;
   failed_rows_count?: number;
   confidence: number;
   review_queue_count: number;
+  opening_balance?: number | null;
+  closing_balance?: number | null;
+  expected_closing_balance?: number | null;
+  reconciliation_diff?: number | null;
+  reconciliation_status?: string | null;
+  total_credits?: number | null;
+  total_debits?: number | null;
   error_message?: string;
   error_report?: any;
 }
@@ -33,8 +57,8 @@ export interface CustomerHistoryItem {
   bank_name: string;
   account_no_masked: string;
   period: string;
-  turnover: number;
-  avg_abb: number;
+  turnover: number | null;
+  avg_abb: number | null;
   emi_monthly: number;
   active_emi_count: number;
   emi_bounce: number;
@@ -42,6 +66,15 @@ export interface CustomerHistoryItem {
   statement_count: number;
   status: string;
   created_at: string;
+}
+
+export function inspectStatementFile(file: File): Promise<PdfInspectionResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiFetch<PdfInspectionResult>('/api/statements/inspect', {
+    method: 'POST',
+    body: formData,
+  });
 }
 
 export function uploadStatement(

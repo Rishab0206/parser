@@ -16,8 +16,24 @@ class PasswordRequiredException(BSIException):
         super().__init__(error_code="PASSWORD_REQUIRED", message=message, status_code=400)
 
 class InvalidPasswordException(BSIException):
-    def __init__(self, message: str = "Incorrect PDF password"):
+    def __init__(self, message: str = "Incorrect PDF password. Please enter the correct password and try again."):
         super().__init__(error_code="INCORRECT_PASSWORD", message=message, status_code=400)
+
+class CorruptedPdfException(BSIException):
+    def __init__(self, message: str = "Invalid or corrupted PDF file. Unable to open document."):
+        super().__init__(error_code="INVALID_FILE", message=message, status_code=400)
+
+class UnsupportedEncryptionException(BSIException):
+    def __init__(self, message: str = "Unsupported PDF encryption method."):
+        super().__init__(error_code="UNSUPPORTED_ENCRYPTION", message=message, status_code=400)
+
+class NoTransactionsFoundException(BSIException):
+    def __init__(self, message: str = "Statement could not be parsed. Please check the PDF password, file quality or statement format."):
+        super().__init__(error_code="NO_TRANSACTIONS_FOUND", message=message, status_code=422)
+
+class OcrExtractionFailedException(BSIException):
+    def __init__(self, message: str = "Scanned PDF OCR extraction failed or returned no readable text."):
+        super().__init__(error_code="OCR_FAILED", message=message, status_code=422)
 
 class UnauthorizedException(BSIException):
     def __init__(self, message: str = "Unauthorized"):

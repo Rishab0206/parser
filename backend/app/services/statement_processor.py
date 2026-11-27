@@ -6,7 +6,14 @@ from datetime import datetime, date
 
 from app.core.encryption import encrypt_data, decrypt_data, encrypt_string, mask_account_number
 from app.core.logging import logger
-from app.core.errors import PasswordRequiredException, InvalidPasswordException
+from app.core.errors import (
+    PasswordRequiredException,
+    InvalidPasswordException,
+    CorruptedPdfException,
+    UnsupportedEncryptionException,
+    NoTransactionsFoundException,
+    OcrExtractionFailedException,
+)
 from app.services.pdf_unlock import unlock_pdf_in_memory
 from app.services.pdf_extract import extract_pdf_pages_data, extract_excel_or_csv
 from app.services.bank_detect import detect_bank_and_account
@@ -55,6 +62,10 @@ def process_statement_pipeline(
         if ext == "pdf":
             # Unlock PDF in memory
             doc, was_encrypted = unlock_pdf_in_memory(raw_bytes, pdf_password)
+            if was_encrypted:
+                stmt.status = "PASSWORD_VERIFIED"
+                stmt.error_message = None
+                db.commit()
             stmt.page_count = len(doc)
             pages_data, used_ocr = extract_pdf_pages_data(doc, raw_bytes, pdf_password)
             doc.close()
@@ -62,10 +73,12 @@ def process_statement_pipeline(
             stmt.page_count = 1
             pages_data = extract_excel_or_csv(raw_bytes, stmt.file_name_original)
         else:
-            raise ValueError(f"Unsupported file format: {ext}")
+            raise CorruptedPdfException(f"Unsupported file format: {ext}")
 
         # 2. Bank and account detection across full text
         full_text = " ".join([p.get("text", "") for p in pages_data])
+        if used_ocr and len(full_text.strip()) < 20:
+            raise OcrExtractionFailedException("Scanned PDF OCR extraction failed or returned no readable text.")
         bank_meta = detect_bank_and_account(full_text)
 
         stmt.bank_name = bank_meta["bank_name"]
@@ -153,19 +166,75 @@ def process_statement_pipeline(
 
             all_review_items.extend(revs)
 
-        # If duplicate transactions across pages or files, flag them
+        # If duplicate transactions across pages or files, flag them and do not create duplicates
         seen_hashes = set()
+        unique_transactions = []
         for t in all_transactions:
             if t["row_hash"] in seen_hashes:
                 t["is_duplicate"] = True
             else:
                 seen_hashes.add(t["row_hash"])
+                unique_transactions.append(t)
+        all_transactions = unique_transactions
+
+        # Fail explicitly if NO transactions were extracted (prevents misleading zero-value dashboard)
+        if not all_transactions:
+            raise NoTransactionsFoundException(
+                "Statement could not be parsed. Please check the PDF password, file quality or statement format."
+            )
 
         # Determine period
-        if all_transactions:
-            dates = [t["txn_date"] for t in all_transactions]
-            stmt.period_from = min(dates)
-            stmt.period_to = max(dates)
+        dates = [t["txn_date"] for t in all_transactions]
+        stmt.period_from = min(dates)
+        stmt.period_to = max(dates)
+
+        # Statement-level Balance Reconciliation (chronological order)
+        chrono_txns = list(all_transactions)
+        if len(chrono_txns) >= 2 and chrono_txns[0]["txn_date"] > chrono_txns[-1]["txn_date"]:
+            chrono_txns = list(reversed(chrono_txns))
+
+        first_txn = chrono_txns[0]
+        last_txn = chrono_txns[-1]
+
+        if first_txn.get("category") == "OPENING_BALANCE":
+            opening_balance = round(float(first_txn["balance"]), 2)
+            flow_txns = chrono_txns[1:]
+        else:
+            opening_balance = round(float(first_txn["balance"]) - float(first_txn["credit"]) + float(first_txn["debit"]), 2)
+            flow_txns = chrono_txns
+
+        total_credits = round(sum(float(t["credit"]) for t in flow_txns), 2)
+        total_debits = round(sum(float(t["debit"]) for t in flow_txns), 2)
+        closing_balance = round(float(last_txn["balance"]), 2)
+        expected_closing_balance = round(opening_balance + total_credits - total_debits, 2)
+        reconciliation_diff = round(closing_balance - expected_closing_balance, 2)
+
+        if abs(reconciliation_diff) <= 1.05:
+            reconciliation_status = "MATCHED"
+        else:
+            reconciliation_status = "MISMATCH"
+            all_review_items.append({
+                "issue_type": "BALANCE_RECONCILIATION_MISMATCH",
+                "confidence": 45.0,
+                "suggested_value": {
+                    "opening_balance": opening_balance,
+                    "total_credits": total_credits,
+                    "total_debits": total_debits,
+                    "expected_closing_balance": expected_closing_balance,
+                    "actual_closing_balance": closing_balance,
+                    "discrepancy": reconciliation_diff
+                },
+                "source_page_no": last_txn.get("source_page_no", 1),
+                "narration_raw": f"Statement balance reconciliation mismatch: expected {expected_closing_balance}, extracted {closing_balance} (diff {reconciliation_diff})"
+            })
+
+        stmt.opening_balance = opening_balance
+        stmt.closing_balance = closing_balance
+        stmt.expected_closing_balance = expected_closing_balance
+        stmt.reconciliation_diff = reconciliation_diff
+        stmt.reconciliation_status = reconciliation_status
+        stmt.total_credits = total_credits
+        stmt.total_debits = total_debits
 
         # 4. Save Transactions into DB
         # Delete previous unversioned transactions for this statement if re-parsing
@@ -406,7 +475,17 @@ def process_statement_pipeline(
         )
         db.add(audit)
 
-        stmt.status = "NEEDS_REVIEW" if len(all_review_items) > 0 else "PARSED"
+        has_warnings = (
+            reconciliation_status == "MISMATCH"
+            or len(all_review_items) > 0
+            or failed_rows_count > 0
+        )
+        stmt.status = "PARSED_WITH_WARNINGS" if has_warnings else "PARSED"
+        stmt.error_message = (
+            f"Balance reconciliation mismatch of {reconciliation_diff} detected."
+            if reconciliation_status == "MISMATCH"
+            else None
+        )
         db.commit()
 
         return {
@@ -418,19 +497,44 @@ def process_statement_pipeline(
             "failed_rows_count": failed_rows_count,
             "file_confidence": file_confidence,
             "review_queue_count": len(all_review_items),
+            "opening_balance": opening_balance,
+            "closing_balance": closing_balance,
+            "expected_closing_balance": expected_closing_balance,
+            "reconciliation_diff": reconciliation_diff,
+            "reconciliation_status": reconciliation_status,
+            "total_credits": total_credits,
+            "total_debits": total_debits,
             "version_no": new_version_no
         }
 
     except (PasswordRequiredException, InvalidPasswordException) as pwd_err:
         db.rollback()
         stmt.status = "PASSWORD_REQUIRED"
+        stmt.reconciliation_status = "UNAVAILABLE"
         stmt.error_message = pwd_err.message if hasattr(pwd_err, 'message') else str(pwd_err)
         db.commit()
         logger.warning(f"Statement {stmt.id} requires password: {stmt.error_message}")
         raise
+    except (CorruptedPdfException, UnsupportedEncryptionException) as file_err:
+        db.rollback()
+        stmt.status = "INVALID_FILE"
+        stmt.reconciliation_status = "UNAVAILABLE"
+        stmt.error_message = file_err.message if hasattr(file_err, 'message') else str(file_err)
+        db.commit()
+        logger.warning(f"Statement {stmt.id} invalid file: {stmt.error_message}")
+        raise
+    except (NoTransactionsFoundException, OcrExtractionFailedException) as parse_err:
+        db.rollback()
+        stmt.status = "PARSING_FAILED"
+        stmt.reconciliation_status = "UNAVAILABLE"
+        stmt.error_message = parse_err.message if hasattr(parse_err, 'message') else str(parse_err)
+        db.commit()
+        logger.warning(f"Statement {stmt.id} parsing failed: {stmt.error_message}")
+        raise
     except Exception as e:
         db.rollback()
-        stmt.status = "FAILED"
+        stmt.status = "PARSING_FAILED"
+        stmt.reconciliation_status = "UNAVAILABLE"
         stmt.error_message = str(e)
         db.commit()
         logger.error(f"Error parsing statement {stmt.id}: {str(e)}", exc_info=True)

@@ -36,7 +36,11 @@ export const AccountCard: React.FC<AccountCardProps> = ({ account, isSelected, o
           </div>
         </div>
         <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-medium ${
-          account.status === 'PARSED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
+          account.status === 'PARSED'
+            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+            : account.status === 'PARSING_FAILED' || account.status === 'INVALID_FILE' || account.status === 'FAILED'
+            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+            : 'bg-amber-50 text-amber-700 border border-amber-200'
         }`}>
           {account.status === 'PARSED' ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
           {account.status}
@@ -46,11 +50,15 @@ export const AccountCard: React.FC<AccountCardProps> = ({ account, isSelected, o
       <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-100 mt-2">
         <div>
           <span className="text-slate-400 block text-[11px]">Turnover</span>
-          <span className="font-semibold text-slate-700">{formatCurrency(account.turnover)}</span>
+          <span className="font-semibold text-slate-700">
+            {account.turnover !== null && account.turnover !== undefined ? formatCurrency(account.turnover) : 'Unavailable'}
+          </span>
         </div>
         <div>
           <span className="text-slate-400 block text-[11px]">Monthly ABB</span>
-          <span className="font-semibold text-slate-700">{formatCurrency(account.abb)}</span>
+          <span className="font-semibold text-slate-700">
+            {account.abb !== null && account.abb !== undefined ? formatCurrency(account.abb) : 'Unavailable'}
+          </span>
         </div>
       </div>
 

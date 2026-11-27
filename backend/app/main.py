@@ -29,12 +29,26 @@ from app.core.security import get_current_user, CurrentUser, Role, hash_password
 # Initialize database schema
 Base.metadata.create_all(bind=engine)
 
-# Ensure owner_user_id columns exist on legacy tables
+# Ensure owner_user_id and reconciliation columns exist on legacy tables
 from sqlalchemy import text
 with engine.connect() as conn:
     for table_name in ["loan_applications", "statements"]:
         try:
             conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN owner_user_id VARCHAR(36)"))
+            conn.commit()
+        except Exception:
+            pass
+    for col_def in [
+        "opening_balance FLOAT",
+        "closing_balance FLOAT",
+        "expected_closing_balance FLOAT",
+        "reconciliation_diff FLOAT",
+        "reconciliation_status VARCHAR(30)",
+        "total_credits FLOAT",
+        "total_debits FLOAT",
+    ]:
+        try:
+            conn.execute(text(f"ALTER TABLE statements ADD COLUMN {col_def}"))
             conn.commit()
         except Exception:
             pass
@@ -146,8 +160,13 @@ def get_customer_banking_history(
             period_str = "—"
 
         sums = db.query(MonthlySummary).filter(MonthlySummary.application_id == a.id).all()
-        turnover = sum(float(m.business_turnover) for m in sums)
-        abb = (sum(float(m.abb) for m in sums) / len(sums)) if sums else 0.0
+        stmt_status = stmts[-1].status if stmts else a.status
+        if sums:
+            turnover = round(sum(float(m.business_turnover) for m in sums), 2)
+            abb = round(sum(float(m.abb) for m in sums) / len(sums), 2)
+        else:
+            turnover = None
+            abb = None
 
         emis = db.query(EmiRecord).filter(EmiRecord.application_id == a.id).all()
         active_emis = [e for e in emis if e.status == 'ACTIVE']
@@ -156,8 +175,6 @@ def get_customer_banking_history(
         emi_bounces = sum(m.emi_bounce_count for m in sums)
         ach_returns = db.query(ReturnRecord).filter(ReturnRecord.application_id == a.id).count()
 
-        stmt_status = stmts[0].status if stmts else a.status
-
         history.append({
             "application_id": a.id,
             "customer_id": a.customer_id,
@@ -165,8 +182,8 @@ def get_customer_banking_history(
             "bank_name": ", ".join(banks) if banks else "—",
             "account_no_masked": ", ".join(accs) if accs else "—",
             "period": period_str,
-            "turnover": round(turnover, 2),
-            "avg_abb": round(abb, 2),
+            "turnover": turnover,
+            "avg_abb": abb,
             "emi_monthly": round(emi_monthly, 2),
             "active_emi_count": len(active_emis),
             "emi_bounce": emi_bounces,

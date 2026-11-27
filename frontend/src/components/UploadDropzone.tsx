@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { UploadCloud, FileText, Lock, CheckCircle2, AlertCircle, Loader2, ArrowRight, Eye, EyeOff, KeyRound } from 'lucide-react';
-import { uploadStatement, getStatementStatus, getApplications, createApplication, unlockStatement } from '../api/statements';
+import { UploadCloud, FileText, Lock, CheckCircle2, AlertCircle, Loader2, ArrowRight, Eye, EyeOff, KeyRound, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { uploadStatement, getStatementStatus, getApplications, unlockStatement, inspectStatementFile, PdfInspectionResult } from '../api/statements';
 import { useNavigate } from 'react-router-dom';
 
 interface UploadDropzoneProps {
@@ -11,6 +11,8 @@ interface UploadDropzoneProps {
 export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess }) => {
   const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
+  const [isInspecting, setIsInspecting] = useState<boolean>(false);
+  const [inspectionResult, setInspectionResult] = useState<PdfInspectionResult | null>(null);
   const [applicationId, setApplicationId] = useState<string>('');
   const [applications, setApplications] = useState<any[]>([]);
   const [customerName, setCustomerName] = useState<string>('');
@@ -55,10 +57,42 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
     },
     maxSize: 50 * 1024 * 1024,
     multiple: false,
-    onDrop: (acceptedFiles) => {
+    onDrop: async (acceptedFiles) => {
       if (acceptedFiles.length > 0) {
-        setFile(acceptedFiles[0]);
+        const selected = acceptedFiles[0];
+        setFile(selected);
         setErrorMsg(null);
+        setStructuredError(null);
+        setParseResult(null);
+        setPendingUnlockStatementId(null);
+        setInspectionResult(null);
+        setPassword('');
+        setIsProtected(false);
+
+        setIsInspecting(true);
+        try {
+          const insp = await inspectStatementFile(selected);
+          setInspectionResult(insp);
+          if (!insp.is_valid) {
+            setStructuredError({
+              error_code: insp.file_status || 'INVALID_FILE',
+              message: insp.message || 'Invalid or corrupted PDF file.',
+              details: { classification: insp.classification }
+            });
+          } else if (insp.is_encrypted) {
+            setIsProtected(true);
+          } else {
+            setIsProtected(false);
+          }
+        } catch (err: any) {
+          setStructuredError({
+            error_code: err.error_code || 'INSPECTION_FAILED',
+            message: err.message || 'Could not inspect uploaded file.',
+            details: err.details || {}
+          });
+        } finally {
+          setIsInspecting(false);
+        }
       }
     }
   });
@@ -123,7 +157,19 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
       if (resp.status === 'PASSWORD_REQUIRED') {
         setIsUploading(false);
         setPendingUnlockStatementId(resp.statement_id);
-        setUnlockError(resp.message || "This bank statement is password protected. Please enter the password.");
+        setUnlockError(resp.error_message || resp.message || "This bank statement is password protected. Please enter the password.");
+        return;
+      }
+
+      if (resp.status === 'PARSING_FAILED' || resp.status === 'INVALID_FILE' || resp.status === 'FAILED') {
+        setIsUploading(false);
+        const errMsg = resp.error_message || "Statement could not be parsed. Please check the PDF password, file quality or statement format.";
+        setErrorMsg(errMsg);
+        setStructuredError({
+          error_code: resp.status,
+          message: errMsg,
+          details: { statement_id: resp.statement_id }
+        });
         return;
       }
 
@@ -135,7 +181,7 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
         attempts++;
         try {
           const status = await getStatementStatus(resp.statement_id);
-          if (status.status === 'PARSED' || status.status === 'NEEDS_REVIEW') {
+          if (status.status === 'PARSED' || status.status === 'PARSED_WITH_WARNINGS' || status.status === 'NEEDS_REVIEW') {
             clearInterval(interval);
             setIsUploading(false);
             setParseResult(status);
@@ -145,17 +191,17 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
             setIsUploading(false);
             setPendingUnlockStatementId(resp.statement_id);
             setUnlockError(status.error_message || "This bank statement is password protected. Please enter the password.");
-          } else if (status.status === 'FAILED') {
+          } else if (status.status === 'PARSING_FAILED' || status.status === 'INVALID_FILE' || status.status === 'FAILED') {
             clearInterval(interval);
             setIsUploading(false);
-            const errMsg = status.error_message || "Statement parsing failed.";
+            const errMsg = status.error_message || "Statement could not be parsed. Please check the PDF password, file quality or statement format.";
             if (errMsg.toLowerCase().includes("password")) {
               setPendingUnlockStatementId(resp.statement_id);
               setUnlockError(errMsg);
             } else {
               setErrorMsg(errMsg);
               setStructuredError({
-                error_code: "STATEMENT_PARSE_FAILED",
+                error_code: status.status,
                 message: errMsg,
                 details: status.error_report || { statement_id: status.statement_id }
               });
@@ -395,7 +441,7 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs py-2 border-y border-emerald-200">
             <div>
               <span className="text-emerald-700 block text-[11px]">Bank Detected</span>
-              <span className="font-semibold">{parseResult.bank_name}</span>
+              <span className="font-semibold">{parseResult.bank_name || 'Unavailable'}</span>
             </div>
             <div>
               <span className="text-emerald-700 block text-[11px]">Rows Parsed</span>
@@ -403,13 +449,48 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
             </div>
             <div>
               <span className="text-emerald-700 block text-[11px]">Account No</span>
-              <span className="font-mono font-semibold">{parseResult.account_no_masked}</span>
+              <span className="font-mono font-semibold">{parseResult.account_no_masked || '—'}</span>
             </div>
             <div>
               <span className="text-emerald-700 block text-[11px]">Confidence</span>
               <span className="font-semibold">{parseResult.confidence}%</span>
             </div>
           </div>
+
+          {parseResult.opening_balance !== undefined && parseResult.opening_balance !== null && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs py-2 border-b border-emerald-200">
+              <div>
+                <span className="text-emerald-700 block text-[11px]">Opening Balance</span>
+                <span className="font-mono font-semibold">₹{Number(parseResult.opening_balance).toLocaleString('en-IN')}</span>
+              </div>
+              <div>
+                <span className="text-emerald-700 block text-[11px]">Closing Balance</span>
+                <span className="font-mono font-semibold">₹{Number(parseResult.closing_balance).toLocaleString('en-IN')}</span>
+              </div>
+              <div>
+                <span className="text-emerald-700 block text-[11px]">Total Credits</span>
+                <span className="font-mono font-semibold text-emerald-700">₹{Number(parseResult.total_credits || 0).toLocaleString('en-IN')}</span>
+              </div>
+              <div>
+                <span className="text-emerald-700 block text-[11px]">Reconciliation</span>
+                <span className={`font-semibold ${parseResult.reconciliation_status === 'MISMATCH' ? 'text-amber-700' : 'text-emerald-700'}`}>
+                  {parseResult.reconciliation_status || 'UNAVAILABLE'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {parseResult.reconciliation_status === 'MISMATCH' && (
+            <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-xs flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">Balance Reconciliation Warning</span>
+                <span>
+                  Expected closing balance (₹{Number(parseResult.expected_closing_balance || 0).toLocaleString('en-IN')}) differs from extracted closing balance (₹{Number(parseResult.closing_balance || 0).toLocaleString('en-IN')}) by ₹{Number(parseResult.reconciliation_diff || 0).toLocaleString('en-IN')}. Please inspect the Review Queue.
+                </span>
+              </div>
+            </div>
+          )}
           {parseResult.review_queue_count > 0 && (
             <p className="text-xs text-amber-800 bg-amber-50 p-2 rounded border border-amber-200">
               Note: {parseResult.review_queue_count} transaction(s) have been added to the Review Queue for underwriter verification.
@@ -460,6 +541,39 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
               </div>
             )}
           </div>
+
+          {/* Automatic Backend PDF Inspection Status */}
+          {isInspecting && (
+            <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-xs flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+              <span className="font-medium">Inspecting PDF security & encryption status...</span>
+            </div>
+          )}
+
+          {!isInspecting && inspectionResult && inspectionResult.is_valid && (
+            <div className={`p-3 rounded-xl border text-xs flex items-center justify-between ${
+              inspectionResult.is_encrypted
+                ? 'bg-amber-50 border-amber-300 text-amber-900'
+                : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+            }`}>
+              <div className="flex items-center gap-2">
+                {inspectionResult.is_encrypted ? (
+                  <Lock className="w-4 h-4 text-amber-700 shrink-0" />
+                ) : (
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                )}
+                <div>
+                  <span className="font-bold">
+                    PDF Security Status: {inspectionResult.is_encrypted ? 'Password Protected' : 'No password required'}
+                  </span>
+                  <span className="block text-[11px] opacity-90">{inspectionResult.message}</span>
+                </div>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/70 border border-current/20">
+                {inspectionResult.page_count} page{inspectionResult.page_count !== 1 ? 's' : ''}
+              </span>
+            </div>
+          )}
 
           {/* Form options */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
@@ -605,11 +719,18 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
               </div>
             ) : (
               <button
-                disabled={!file || isUploading}
+                disabled={!file || isUploading || isInspecting || inspectionResult?.is_valid === false || (isProtected && !password.trim())}
                 onClick={handleUpload}
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold text-xs rounded-lg transition-colors shadow-sm"
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold text-xs rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2"
               >
-                Upload & Start Verified Analysis
+                {isProtected ? (
+                  <>
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Unlock &amp; Parse Statement</span>
+                  </>
+                ) : (
+                  <span>Upload &amp; Start Verified Analysis</span>
+                )}
               </button>
             )}
           </div>

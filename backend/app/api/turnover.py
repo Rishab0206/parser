@@ -17,20 +17,9 @@ def get_application_summary(
     current_user: CurrentUser = Depends(get_current_user)
 ):
     verify_application_access(application_id, current_user, db)
-    stmt_count = db.query(Statement).filter(Statement.application_id == application_id).count()
-    if stmt_count == 0:
+    statements = db.query(Statement).filter(Statement.application_id == application_id).all()
+    if not statements:
         return SummaryKpiResponse(
-            total_business_turnover=0.0,
-            avg_monthly_turnover=0.0,
-            total_debit=0.0,
-            net_cash_flow=0.0,
-            avg_monthly_abb=0.0,
-            emi_bounce_count=0,
-            total_ecs_returns=0,
-            emi_to_turnover_ratio=0.0,
-            total_negative_days=0,
-            review_queue_count=0,
-            internal_transfers_excluded=0.0,
             monthly_breakdown=[],
             has_data=False
         )
@@ -40,6 +29,23 @@ def get_application_summary(
         query = query.filter(MonthlySummary.account_id == account_id)
 
     monthly_rows = query.order_by(MonthlySummary.month.asc()).all()
+
+    target_stmts = [s for s in statements if not account_id or s.id == account_id]
+    latest_stmt = target_stmts[-1] if target_stmts else statements[-1]
+
+    # Never convert failed/unparsed statements into misleading zero values
+    if not monthly_rows:
+        return SummaryKpiResponse(
+            review_queue_count=db.query(ReviewQueue).filter(
+                ReviewQueue.application_id == application_id,
+                ReviewQueue.status == "OPEN"
+            ).count(),
+            parsing_status=latest_stmt.status,
+            error_message=latest_stmt.error_message,
+            reconciliation_status=latest_stmt.reconciliation_status or "UNAVAILABLE",
+            monthly_breakdown=[],
+            has_data=False
+        )
 
     total_turnover = sum(float(m.business_turnover) for m in monthly_rows)
     total_debit = sum(float(m.total_debit) for m in monthly_rows)
@@ -88,6 +94,33 @@ def get_application_summary(
             emi_to_turnover_ratio=round(ratio, 2)
         ))
 
+    from app.models.models import Transaction
+    txn_query = db.query(Transaction).filter(Transaction.application_id == application_id)
+    if account_id:
+        txn_query = txn_query.filter(Transaction.statement_id == account_id)
+    total_txns = txn_query.count()
+
+    parsed_stmts = [s for s in target_stmts if s.status in ["PARSED", "PARSED_WITH_WARNINGS", "NEEDS_REVIEW"]]
+    opening_bal = None
+    closing_bal = None
+    total_creds = round(sum(float(m.gross_credit) for m in monthly_rows), 2)
+    recon_status = None
+    recon_diff = None
+
+    if parsed_stmts:
+        if len(parsed_stmts) == 1:
+            opening_bal = parsed_stmts[0].opening_balance
+            closing_bal = parsed_stmts[0].closing_balance
+            recon_status = parsed_stmts[0].reconciliation_status
+            recon_diff = parsed_stmts[0].reconciliation_diff
+        else:
+            vals_open = [s.opening_balance for s in parsed_stmts if s.opening_balance is not None]
+            vals_close = [s.closing_balance for s in parsed_stmts if s.closing_balance is not None]
+            opening_bal = round(sum(vals_open), 2) if vals_open else None
+            closing_bal = round(sum(vals_close), 2) if vals_close else None
+            any_mismatch = any(s.reconciliation_status == "MISMATCH" for s in parsed_stmts)
+            recon_status = "MISMATCH" if any_mismatch else "MATCHED"
+
     return SummaryKpiResponse(
         total_business_turnover=round(total_turnover, 2),
         avg_monthly_turnover=round(avg_turnover, 2),
@@ -100,6 +133,14 @@ def get_application_summary(
         total_negative_days=total_negative_days,
         review_queue_count=rq_count,
         internal_transfers_excluded=round(internal_excluded, 2),
+        opening_balance=opening_bal,
+        closing_balance=closing_bal,
+        total_credits=total_creds,
+        total_transactions=total_txns,
+        reconciliation_status=recon_status,
+        reconciliation_diff=recon_diff,
+        parsing_status=latest_stmt.status,
+        error_message=latest_stmt.error_message,
         monthly_breakdown=breakdown,
         has_data=True
     )

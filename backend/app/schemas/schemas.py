@@ -22,11 +22,22 @@ class StatementStatusResponse(BaseModel):
     bank_detect_confidence: float = 0.0
     account_no_masked: Optional[str] = None
     account_type: str = "SAVINGS"
+    ifsc: Optional[str] = None
+    customer_name: Optional[str] = None
+    period_from: Optional[date] = None
+    period_to: Optional[date] = None
     page_count: int = 1
     rows_parsed: int = 0
     failed_rows_count: int = 0
     confidence: float = 0.0
     review_queue_count: int = 0
+    opening_balance: Optional[float] = None
+    closing_balance: Optional[float] = None
+    expected_closing_balance: Optional[float] = None
+    reconciliation_diff: Optional[float] = None
+    reconciliation_status: Optional[str] = None
+    total_credits: Optional[float] = None
+    total_debits: Optional[float] = None
     error_message: Optional[str] = None
     error_report: Optional[Dict[str, Any]] = None
 
@@ -35,12 +46,18 @@ class AccountCardResponse(BaseModel):
     bank_name: str
     account_no_masked: str
     account_type: str
+    ifsc: Optional[str] = None
     period_from: Optional[date] = None
     period_to: Optional[date] = None
-    abb: float
-    turnover: float
+    abb: Optional[float] = None
+    turnover: Optional[float] = None
+    opening_balance: Optional[float] = None
+    closing_balance: Optional[float] = None
+    reconciliation_status: Optional[str] = None
+    reconciliation_diff: Optional[float] = None
     emi_count: int
     status: str
+    error_message: Optional[str] = None
     is_consolidated: bool = False
 
 class TransactionResponse(BaseModel):
@@ -148,17 +165,25 @@ class MonthlySummaryResponse(BaseModel):
     emi_to_turnover_ratio: float = 0.0
 
 class SummaryKpiResponse(BaseModel):
-    total_business_turnover: float
-    avg_monthly_turnover: float
-    total_debit: float
-    net_cash_flow: float
-    avg_monthly_abb: float
-    emi_bounce_count: int
-    total_ecs_returns: int
-    emi_to_turnover_ratio: float
-    total_negative_days: int
-    review_queue_count: int
-    internal_transfers_excluded: float
+    total_business_turnover: Optional[float] = None
+    avg_monthly_turnover: Optional[float] = None
+    total_debit: Optional[float] = None
+    net_cash_flow: Optional[float] = None
+    avg_monthly_abb: Optional[float] = None
+    emi_bounce_count: Optional[int] = None
+    total_ecs_returns: Optional[int] = None
+    emi_to_turnover_ratio: Optional[float] = None
+    total_negative_days: Optional[int] = None
+    review_queue_count: int = 0
+    internal_transfers_excluded: Optional[float] = None
+    opening_balance: Optional[float] = None
+    closing_balance: Optional[float] = None
+    total_credits: Optional[float] = None
+    total_transactions: Optional[int] = None
+    reconciliation_status: Optional[str] = None
+    reconciliation_diff: Optional[float] = None
+    parsing_status: Optional[str] = None
+    error_message: Optional[str] = None
     monthly_breakdown: List[MonthlySummaryResponse]
     has_data: bool = True
 

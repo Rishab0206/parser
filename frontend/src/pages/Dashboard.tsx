@@ -506,8 +506,45 @@ export const Dashboard: React.FC = () => {
               </div>
             )}
 
-            {/* KPI Cards */}
-            {summary && (
+            {/* Parsing Failure / Password Required / Reconciliation Mismatch Banners */}
+            {summary && !summary.has_data && (
+              <div className="mb-5 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-bold text-rose-900">
+                      {summary.parsing_status === 'PASSWORD_REQUIRED'
+                        ? 'Statement Password Required'
+                        : 'Statement Could Not Be Parsed'}
+                    </h4>
+                    <p className="text-xs text-rose-800 mt-0.5">
+                      {summary.error_message || 'Statement could not be parsed. Please check the PDF password, file quality or statement format.'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => navigate('/upload')}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg shrink-0"
+                >
+                  {summary.parsing_status === 'PASSWORD_REQUIRED' ? 'Unlock Statement' : 'Re-upload Statement'}
+                </button>
+              </div>
+            )}
+
+            {summary && summary.has_data && summary.reconciliation_status === 'MISMATCH' && (
+              <div className="mb-5 p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs">
+                  <span className="font-bold block text-sm">Balance Reconciliation Warning</span>
+                  <span>
+                    Opening Balance + Credits − Debits does not match the extracted Closing Balance (difference: ₹{Math.abs(summary.reconciliation_diff || 0).toLocaleString('en-IN')}). Some transactions may be missing or misread — please verify in the Review Queue.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* KPI Cards (Only render when verified parsed data exists) */}
+            {summary && summary.has_data && (
               <KpiCards
                 summary={summary}
                 onReviewClick={() => setActiveTab('review')}

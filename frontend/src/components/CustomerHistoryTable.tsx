@@ -157,12 +157,12 @@ export const CustomerHistoryTable: React.FC<CustomerHistoryTableProps> = ({
 
                     {/* Turnover */}
                     <td className="py-3.5 px-3 text-right font-semibold text-slate-900 whitespace-nowrap">
-                      ₹{item.turnover.toLocaleString('en-IN')}
+                      {item.turnover !== null && item.turnover !== undefined ? `₹${item.turnover.toLocaleString('en-IN')}` : '—'}
                     </td>
 
                     {/* Avg ABB */}
                     <td className="py-3.5 px-3 text-right font-semibold text-slate-800 whitespace-nowrap">
-                      ₹{item.avg_abb.toLocaleString('en-IN')}
+                      {item.avg_abb !== null && item.avg_abb !== undefined ? `₹${item.avg_abb.toLocaleString('en-IN')}` : '—'}
                     </td>
 
                     {/* EMI / Month */}

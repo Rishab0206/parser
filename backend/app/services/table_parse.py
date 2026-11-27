@@ -43,11 +43,21 @@ def parse_table_page_rows(
             parsed_date = parse_date_string(date_val, date_formats)
 
             if not parsed_date:
-                # Could be continuation text of previous row
-                if transactions and len(row) > col_map.get("narration", -1):
+                # Skip page headers/footers before treating as continuation text
+                row_text_upper = " ".join([str(c).strip().upper() for c in row if c])
+                is_header_footer = (
+                    any(k in row_text_upper for k in [
+                        "STATEMENT OF ACCOUNT", "GENERATED ON", "BROUGHT FORWARD",
+                        "CARRIED FORWARD", "PAGE ", "OPENING BALANCE", "CLOSING BALANCE",
+                        "TOTAL DEBIT", "TOTAL CREDIT"
+                    ])
+                    or ("DATE" in row_text_upper and "BALANCE" in row_text_upper and ("DEBIT" in row_text_upper or "WITHDRAWAL" in row_text_upper or "NARRATION" in row_text_upper))
+                )
+                if not is_header_footer and transactions and len(row) > col_map.get("narration", -1):
                     continuation_text = " ".join([str(c).strip() for c in row if c])
                     if continuation_text:
                         transactions[-1]["narration_raw"] += " " + continuation_text
+                        transactions[-1]["narration_clean"] = re.sub(r'\s+', ' ', transactions[-1]["narration_raw"]).strip()
                 i += 1
                 continue
 
@@ -74,8 +84,8 @@ def parse_table_page_rows(
                 j += 1
             i = j - 1
 
-            debit = parse_indian_amount(debit_raw) or 0.0
-            credit = parse_indian_amount(credit_raw) or 0.0
+            debit = abs(parse_indian_amount(debit_raw) or 0.0)
+            credit = abs(parse_indian_amount(credit_raw) or 0.0)
             balance = parse_indian_amount(balance_raw)
 
             # Check if this is an Opening Balance row
