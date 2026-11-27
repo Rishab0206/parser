@@ -49,6 +49,7 @@ def process_statement_pipeline(
     stmt.status = "PARSING"
     stmt.processing_stage = "PDF_VERIFICATION"
     db.commit()
+    print(f"[STAGE] Statement {statement_id}: PDF_VERIFICATION", flush=True)
 
     try:
         # 1. Read encrypted file from disk and decrypt in memory
@@ -64,21 +65,25 @@ def process_statement_pipeline(
             # Unlock PDF in memory
             stmt.processing_stage = "DOCUMENT_UNLOCKING"
             db.commit()
+            print(f"[STAGE] Statement {statement_id}: DOCUMENT_UNLOCKING", flush=True)
             doc, was_encrypted = unlock_pdf_in_memory(raw_bytes, pdf_password)
             if was_encrypted:
                 stmt.status = "PASSWORD_VERIFIED"
                 stmt.processing_stage = "TRANSACTION_EXTRACTION"
                 stmt.error_message = None
                 db.commit()
+                print(f"[STAGE] Statement {statement_id}: PASSWORD_VERIFIED", flush=True)
             stmt.page_count = len(doc)
             stmt.processing_stage = "TRANSACTION_EXTRACTION"
             db.commit()
+            print(f"[STAGE] Statement {statement_id}: TRANSACTION_EXTRACTION (pages={len(doc)})", flush=True)
             pages_data, used_ocr = extract_pdf_pages_data(doc, raw_bytes, pdf_password)
             doc.close()
         elif ext in ["xlsx", "xls", "csv"]:
             stmt.page_count = 1
             stmt.processing_stage = "TRANSACTION_EXTRACTION"
             db.commit()
+            print(f"[STAGE] Statement {statement_id}: TRANSACTION_EXTRACTION (tabular={ext})", flush=True)
             pages_data = extract_excel_or_csv(raw_bytes, stmt.file_name_original)
         else:
             raise CorruptedPdfException(f"Unsupported file format: {ext}")
@@ -112,16 +117,22 @@ def process_statement_pipeline(
         # 3. Parse transactions page by page using bank config
         stmt.processing_stage = "TRANSACTION_CATEGORIZATION"
         db.commit()
+        print(f"[STAGE] Statement {statement_id}: TRANSACTION_CATEGORIZATION (bank={stmt.bank_name})", flush=True)
         all_transactions = []
         all_review_items = []
         failed_rows_count = 0
 
         bank_cfg = bank_meta.get("config")
+        carry_col_map = None  # Carry column mapping across continuation pages
 
         for page in pages_data:
             page_no = page["page_no"]
             table_rows = page.get("table_rows", [])
-            txns, revs = parser_engine.parse_raw_rows(table_rows, bank_cfg, source_page_no=page_no)
+            txns, revs = parser_engine.parse_raw_rows(
+                table_rows, bank_cfg, source_page_no=page_no,
+                prev_col_map=carry_col_map
+            )
+            carry_col_map = getattr(parser_engine, "last_col_map", carry_col_map)
 
             for t in txns:
                 try:
@@ -186,6 +197,20 @@ def process_statement_pipeline(
                 seen_hashes.add(t["row_hash"])
                 unique_transactions.append(t)
         all_transactions = unique_transactions
+
+        # Fix placeholder dates on OPENING_BALANCE rows (for banks like Axis with no-date opening rows)
+        from datetime import date as date_cls
+        if all_transactions:
+            first_real_date = None
+            for t in all_transactions:
+                if t["txn_date"] != date_cls(1900, 1, 1):
+                    first_real_date = t["txn_date"]
+                    break
+            if first_real_date:
+                for t in all_transactions:
+                    if t["txn_date"] == date_cls(1900, 1, 1) and t.get("category") == "OPENING_BALANCE":
+                        t["txn_date"] = first_real_date
+                        t["value_date"] = first_real_date
 
         # Fail explicitly if NO transactions were extracted (prevents misleading zero-value dashboard)
         if not all_transactions:
@@ -294,6 +319,7 @@ def process_statement_pipeline(
         # 5. EMI Intelligence Detection & Banking Analysis
         stmt.processing_stage = "BANKING_ANALYSIS"
         db.commit()
+        print(f"[STAGE] Statement {statement_id}: BANKING_ANALYSIS (txns={len(all_transactions)})", flush=True)
         confirmed_emis, possible_emis, emi_attempts = detect_emi_intelligence(all_transactions)
 
         # 6. Return Reconciliation
@@ -500,6 +526,14 @@ def process_statement_pipeline(
             else None
         )
         db.commit()
+        print(f"[STAGE] Statement {statement_id}: ANALYSIS_COMPLETED (status={stmt.status}, rows={len(all_transactions)})", flush=True)
+
+        # Clean up temporary encrypted upload file after successful completion
+        try:
+            if stmt.file_path_encrypted and os.path.exists(stmt.file_path_encrypted):
+                os.remove(stmt.file_path_encrypted)
+        except Exception as cleanup_err:
+            logger.warning(f"Temp file cleanup skipped for {statement_id}: {cleanup_err}")
 
         return {
             "statement_id": stmt.id,
@@ -523,9 +557,11 @@ def process_statement_pipeline(
     except (PasswordRequiredException, InvalidPasswordException) as pwd_err:
         db.rollback()
         stmt.status = "PASSWORD_REQUIRED"
+        stmt.processing_stage = "PASSWORD_VERIFICATION"
         stmt.reconciliation_status = "UNAVAILABLE"
         stmt.error_message = pwd_err.message if hasattr(pwd_err, 'message') else str(pwd_err)
         db.commit()
+        print(f"[STAGE] Statement {statement_id}: FAILED (PASSWORD_REQUIRED: {stmt.error_message})", flush=True)
         logger.warning(f"Statement {stmt.id} requires password: {stmt.error_message}")
         raise
     except (CorruptedPdfException, UnsupportedEncryptionException) as file_err:
@@ -534,6 +570,7 @@ def process_statement_pipeline(
         stmt.reconciliation_status = "UNAVAILABLE"
         stmt.error_message = file_err.message if hasattr(file_err, 'message') else str(file_err)
         db.commit()
+        print(f"[STAGE] Statement {statement_id}: FAILED (INVALID_FILE: {stmt.error_message})", flush=True)
         logger.warning(f"Statement {stmt.id} invalid file: {stmt.error_message}")
         raise
     except (NoTransactionsFoundException, OcrExtractionFailedException) as parse_err:
@@ -542,14 +579,18 @@ def process_statement_pipeline(
         stmt.reconciliation_status = "UNAVAILABLE"
         stmt.error_message = parse_err.message if hasattr(parse_err, 'message') else str(parse_err)
         db.commit()
+        print(f"[STAGE] Statement {statement_id}: FAILED (PARSING_FAILED: {stmt.error_message})", flush=True)
         logger.warning(f"Statement {stmt.id} parsing failed: {stmt.error_message}")
         raise
     except Exception as e:
+        import traceback
         db.rollback()
         stmt.status = "PARSING_FAILED"
         stmt.reconciliation_status = "UNAVAILABLE"
         stmt.error_message = str(e)
         db.commit()
+        print(f"[STAGE] Statement {statement_id}: FAILED (EXCEPTION: {e})", flush=True)
+        traceback.print_exc()
         logger.error(f"Error parsing statement {stmt.id}: {str(e)}", exc_info=True)
         raise
 

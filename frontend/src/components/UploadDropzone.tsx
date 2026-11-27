@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { UploadCloud, FileText, Lock, CheckCircle2, AlertCircle, Loader2, ArrowRight, Eye, EyeOff, KeyRound, ShieldCheck, AlertTriangle, X } from 'lucide-react';
 import { uploadStatement, getStatementStatus, getApplications, unlockStatement, inspectStatementFile, PdfInspectionResult } from '../api/statements';
@@ -31,9 +31,19 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [stage, setStage] = useState<string>('');
   const [backendStage, setBackendStage] = useState<string>('FILE_UPLOADED');
+  const [failedStage, setFailedStage] = useState<string | null>(null);
   const [parseResult, setParseResult] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [structuredError, setStructuredError] = useState<{ error_code: string; message: string; details: any } | null>(null);
+  const pollTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current !== null) {
+        window.clearTimeout(pollTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     getApplications()
@@ -120,6 +130,13 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
     }
   };
 
+  const clearPollTimer = () => {
+    if (pollTimerRef.current !== null) {
+      window.clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  };
+
   const handleUpload = async () => {
     if (!file) {
       setErrorMsg("Please select a bank statement file to upload.");
@@ -130,15 +147,18 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
       return;
     }
 
+    clearPollTimer();
     setIsUploading(true);
     setErrorMsg(null);
     setStructuredError(null);
     setParseResult(null);
     setPendingUnlockStatementId(null);
     setUnlockError(null);
+    setFailedStage(null);
+    setBackendStage('FILE_UPLOADED');
 
     // Multi-stage progress animation
-    setStage("Extracting pages & checking encryption...");
+    setStage("Uploading file & checking encryption...");
 
     try {
       const targetAppId = applicationId === 'NEW' ? undefined : applicationId;
@@ -156,14 +176,25 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
 
       // Check if statement requires password
       if (resp.status === 'PASSWORD_REQUIRED') {
+        setBackendStage('PASSWORD_VERIFICATION');
         setIsUploading(false);
         setPendingUnlockStatementId(resp.statement_id);
         setUnlockError(resp.error_message || resp.message || "This bank statement is password protected. Please enter the password.");
         return;
       }
 
+      if (resp.status === 'PARSED' || resp.status === 'PARSED_WITH_WARNINGS' || resp.status === 'NEEDS_REVIEW') {
+        const finalStatus = await getStatementStatus(resp.statement_id);
+        setBackendStage(finalStatus.processing_stage || 'ANALYSIS_COMPLETED');
+        setIsUploading(false);
+        setParseResult(finalStatus);
+        if (onUploadSuccess) onUploadSuccess(resp.statement_id);
+        return;
+      }
+
       if (resp.status === 'PARSING_FAILED' || resp.status === 'INVALID_FILE' || resp.status === 'FAILED') {
         setIsUploading(false);
+        setFailedStage(backendStage || 'PDF_VERIFICATION');
         const errMsg = resp.error_message || "Statement could not be parsed. Please check the PDF password, file quality or statement format.";
         setErrorMsg(errMsg);
         setStructuredError({
@@ -174,61 +205,104 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
         return;
       }
 
-      setStage("Detecting bank & parsing transaction table...");
-      
-      // Poll statement status
+      setBackendStage('PDF_VERIFICATION');
+      setStage("Inspecting PDF & unlocking document...");
+
+      const STAGE_LABELS: Record<string, string> = {
+        FILE_UPLOADED: "File uploaded, queuing analysis...",
+        PDF_VERIFICATION: "Verifying PDF structure...",
+        PASSWORD_VERIFICATION: "Checking PDF password...",
+        DOCUMENT_UNLOCKING: "Unlocking PDF in memory...",
+        TRANSACTION_EXTRACTION: "Extracting pages & transaction tables...",
+        TRANSACTION_CATEGORIZATION: "Detecting bank & categorizing transactions...",
+        BANKING_ANALYSIS: "Computing EMI, returns & monthly ABB...",
+        ANALYSIS_COMPLETED: "Analysis completed!"
+      };
+
+      const MAX_POLL_ATTEMPTS = 45; // 45 * 1.5s = 67.5 seconds max
       let attempts = 0;
-      const interval = setInterval(async () => {
-        attempts++;
+
+      const pollStatus = async () => {
+        attempts += 1;
         try {
           const status = await getStatementStatus(resp.statement_id);
-          if (status.processing_stage) {
-            setBackendStage(status.processing_stage);
+          const currentStage = status.processing_stage || 'PDF_VERIFICATION';
+          setBackendStage(currentStage);
+          if (STAGE_LABELS[currentStage]) {
+            setStage(STAGE_LABELS[currentStage]);
           }
+
           if (status.status === 'PARSED' || status.status === 'PARSED_WITH_WARNINGS' || status.status === 'NEEDS_REVIEW') {
-            clearInterval(interval);
+            clearPollTimer();
             setBackendStage('ANALYSIS_COMPLETED');
             setIsUploading(false);
             setParseResult(status);
             if (onUploadSuccess) onUploadSuccess(resp.statement_id);
-          } else if (status.status === 'PASSWORD_REQUIRED') {
-            clearInterval(interval);
+            return;
+          }
+
+          if (status.status === 'PASSWORD_REQUIRED') {
+            clearPollTimer();
             setBackendStage('PASSWORD_VERIFICATION');
             setIsUploading(false);
             setPendingUnlockStatementId(resp.statement_id);
             setUnlockError(status.error_message || "This bank statement is password protected. Please enter the password.");
-          } else if (status.status === 'PARSING_FAILED' || status.status === 'INVALID_FILE' || status.status === 'FAILED') {
-            clearInterval(interval);
+            return;
+          }
+
+          if (status.status === 'PARSING_FAILED' || status.status === 'INVALID_FILE' || status.status === 'FAILED') {
+            clearPollTimer();
             setIsUploading(false);
             const errMsg = status.error_message || "Statement could not be parsed. Please check the PDF password, file quality or statement format.";
             if (errMsg.toLowerCase().includes("password")) {
+              setFailedStage('PASSWORD_VERIFICATION');
               setPendingUnlockStatementId(resp.statement_id);
               setUnlockError(errMsg);
             } else {
+              setFailedStage(currentStage);
               setErrorMsg(errMsg);
               setStructuredError({
                 error_code: status.status,
                 message: errMsg,
-                details: status.error_report || { statement_id: status.statement_id }
+                details: status.error_report || { statement_id: status.statement_id, stage: currentStage }
               });
             }
-          } else {
-            if (attempts === 2) setStage("Classifying transactions & detecting EMIs...");
-            if (attempts === 4) setStage("Reconciling returns & calculating monthly ABB...");
+            return;
           }
+
+          if (attempts >= MAX_POLL_ATTEMPTS) {
+            clearPollTimer();
+            setIsUploading(false);
+            setFailedStage(currentStage);
+            const timeoutMsg = `Processing timed out at stage ${currentStage} after ${Math.round((MAX_POLL_ATTEMPTS * 1.5))}s. Please retry or check server logs.`;
+            setErrorMsg(timeoutMsg);
+            setStructuredError({
+              error_code: "PROCESSING_TIMEOUT",
+              message: timeoutMsg,
+              details: { statement_id: resp.statement_id, last_stage: currentStage, status: status.status }
+            });
+            return;
+          }
+
+          pollTimerRef.current = window.setTimeout(pollStatus, 1500);
         } catch (e: any) {
-          clearInterval(interval);
+          clearPollTimer();
           setIsUploading(false);
-          setErrorMsg(e.message || "Could not fetch parsing progress.");
+          setFailedStage(backendStage || 'FILE_UPLOADED');
+          const msg = e?.message || "Could not fetch parsing progress.";
+          setErrorMsg(msg);
           setStructuredError({
-            error_code: e.error_code || "PROGRESS_FETCH_FAILED",
-            message: e.message || "Failed to poll status",
-            details: e.details || {}
+            error_code: e?.error_code || "PROGRESS_FETCH_FAILED",
+            message: msg,
+            details: e?.details || {}
           });
         }
-      }, 1500);
+      };
+
+      pollTimerRef.current = window.setTimeout(pollStatus, 1000);
 
     } catch (err: any) {
+      clearPollTimer();
       setIsUploading(false);
       if (
         err.error_code === 'PASSWORD_REQUIRED' ||
@@ -241,6 +315,7 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
           return;
         }
       }
+      setFailedStage('FILE_UPLOADED');
       setErrorMsg(err.message || "Upload failed");
       setStructuredError({
         error_code: err.error_code || "UPLOAD_FAILED",
@@ -748,16 +823,31 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
           )}
 
           {/* Upload & 8-Step Processing Progress */}
-          <div className="pt-3">
-            {isUploading ? (
-              <div className="p-4 rounded-xl bg-blue-50/80 border border-blue-200 text-blue-950 space-y-3 text-xs">
+          <div className="pt-3 space-y-3">
+            {(isUploading || failedStage) && (
+              <div className={`p-4 rounded-xl border space-y-3 text-xs ${
+                failedStage
+                  ? 'bg-rose-50/70 border-rose-200 text-rose-950'
+                  : 'bg-blue-50/80 border-blue-200 text-blue-950'
+              }`}>
                 <div className="flex items-center justify-between font-semibold">
                   <div className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                    <span>Processing Statement: {stage}</span>
+                    {failedStage ? (
+                      <>
+                        <AlertCircle className="w-4 h-4 text-rose-600" />
+                        <span>Processing Failed at Stage: {failedStage}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                        <span>Processing Statement: {stage}</span>
+                      </>
+                    )}
                   </div>
-                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-800">
-                    {backendStage}
+                  <span className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded ${
+                    failedStage ? 'bg-rose-100 text-rose-800' : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {failedStage || backendStage}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
@@ -771,21 +861,27 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
                     { key: 'BANKING_ANALYSIS', label: '7. Banking Analysis' },
                     { key: 'ANALYSIS_COMPLETED', label: '8. Completed' },
                   ].map((step, idx, arr) => {
-                    const currentIdx = Math.max(0, arr.findIndex((s) => s.key === backendStage));
-                    const isDone = idx < currentIdx || backendStage === 'ANALYSIS_COMPLETED';
-                    const isActive = idx === currentIdx && backendStage !== 'ANALYSIS_COMPLETED';
+                    const activeKey = failedStage || backendStage;
+                    const currentIdx = Math.max(0, arr.findIndex((s) => s.key === activeKey));
+                    const isFailed = failedStage === step.key;
+                    const isDone = !isFailed && (idx < currentIdx || (!failedStage && backendStage === 'ANALYSIS_COMPLETED'));
+                    const isActive = !failedStage && idx === currentIdx && backendStage !== 'ANALYSIS_COMPLETED';
                     return (
                       <div
                         key={step.key}
                         className={`px-2 py-1.5 rounded-lg border text-[10px] font-medium flex items-center gap-1.5 ${
-                          isDone
+                          isFailed
+                            ? 'bg-rose-100 border-rose-400 text-rose-900 font-bold'
+                            : isDone
                             ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                             : isActive
                             ? 'bg-white border-blue-400 text-blue-800 shadow-xs'
                             : 'bg-white/50 border-slate-200 text-slate-400'
                         }`}
                       >
-                        {isDone ? (
+                        {isFailed ? (
+                          <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
+                        ) : isDone ? (
                           <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
                         ) : isActive ? (
                           <Loader2 className="w-3 h-3 animate-spin text-blue-600 shrink-0" />
@@ -798,7 +894,9 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
                   })}
                 </div>
               </div>
-            ) : (
+            )}
+
+            {!isUploading && (
               <button
                 disabled={!file || isUploading || isInspecting || inspectionResult?.is_valid === false || (isProtected && !password.trim())}
                 onClick={handleUpload}

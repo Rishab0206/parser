@@ -4,9 +4,14 @@ export interface ApiError extends Error {
   details?: Record<string, any>;
 }
 
-export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+export interface ApiFetchOptions extends RequestInit {
+  timeoutMs?: number;
+}
+
+export async function apiFetch<T>(endpoint: string, options: ApiFetchOptions = {}): Promise<T> {
+  const { timeoutMs = 20000, ...fetchOptions } = options;
   const defaultHeaders: Record<string, string> = {};
-  if (!(options.body instanceof FormData)) {
+  if (!(fetchOptions.body instanceof FormData)) {
     defaultHeaders['Content-Type'] = 'application/json';
   }
 
@@ -19,26 +24,59 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   const apiBase = (import.meta as any).env?.VITE_API_BASE_URL || '';
   const url = endpoint.startsWith('http') ? endpoint : `${apiBase}${endpoint}`;
 
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      ...defaultHeaders,
-      ...options.headers,
-    },
-  });
+  const controller = new AbortController();
+  const timerId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...fetchOptions,
+      signal: fetchOptions.signal || controller.signal,
+      headers: {
+        ...defaultHeaders,
+        ...fetchOptions.headers,
+      },
+    });
+  } catch (err: any) {
+    window.clearTimeout(timerId);
+    if (err?.name === 'AbortError') {
+      const timeoutErr = new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s. Please try again.`) as ApiError;
+      timeoutErr.status = 408;
+      timeoutErr.error_code = 'REQUEST_TIMEOUT';
+      throw timeoutErr;
+    }
+    const netErr = new Error(err?.message || 'Network error: Unable to reach server.') as ApiError;
+    netErr.status = 0;
+    netErr.error_code = 'NETWORK_ERROR';
+    throw netErr;
+  } finally {
+    window.clearTimeout(timerId);
+  }
 
   if (!response.ok) {
-    let errorDetail = "An error occurred while communicating with the server.";
-    let errorCode = "HTTP_ERROR";
+    let errorDetail = `Server returned HTTP ${response.status}.`;
+    let errorCode = `HTTP_${response.status}`;
     let details: Record<string, any> = {};
 
     try {
-      const errJson = await response.json();
-      errorDetail = errJson.message || errJson.detail || errorDetail;
-      errorCode = errJson.error_code || "REQUEST_FAILED";
-      details = errJson.details || {};
+      const rawText = await response.text();
+      if (rawText) {
+        try {
+          const errJson = JSON.parse(rawText);
+          errorDetail = errJson.message || errJson.detail || errorDetail;
+          errorCode = errJson.error_code || errorCode;
+          details = errJson.details || {};
+        } catch {
+          // Non-JSON response (e.g. Render 502/504 HTML proxy error)
+          if (response.status === 502 || response.status === 503 || response.status === 504) {
+            errorDetail = `Server timeout or memory limit reached (HTTP ${response.status}). Please retry or check file size.`;
+          } else {
+            errorDetail = `HTTP ${response.status}: ${rawText.replace(/<[^>]+>/g, ' ').trim().slice(0, 180)}`;
+          }
+        }
+      }
     } catch {
-      // keep default error
+      // keep status-based error
     }
 
     if (response.status === 401) {

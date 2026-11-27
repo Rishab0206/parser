@@ -124,7 +124,7 @@ class BankParserEngine:
         Maps column indices to standard fields: date, narration, ref, debit, credit, balance.
         """
         mapping = {}
-        header_clean = [str(col).strip().upper() for col in header_row]
+        header_clean = [str(col).replace("\n", " ").strip().upper() for col in header_row]
 
         aliases = {
             "date": ["DATE", "TXN DATE", "TRAN DATE", "TRANSACTION DATE", "POST DATE"],
@@ -154,14 +154,18 @@ class BankParserEngine:
         self,
         table_rows: List[List[str]],
         config: Optional[Dict[str, Any]] = None,
-        source_page_no: int = 1
+        source_page_no: int = 1,
+        prev_col_map: Optional[Dict[str, int]] = None
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """
         Parses raw extracted table rows into normalized transaction dicts.
         Handles multi-line wrapping and balance reconciliation.
+        Accepts prev_col_map to handle continuation pages without headers.
+        Stores the resolved column map on self.last_col_map.
         Returns (parsed_transactions, review_items).
         """
         if not table_rows:
+            self.last_col_map = prev_col_map
             return [], []
 
         # Find header row
@@ -182,17 +186,26 @@ class BankParserEngine:
                     break
 
         if header_idx == -1:
-            # Return raw row review item
-            return [], [{
-                "issue_type": "UNKNOWN_TABLE_HEADER",
-                "confidence": 30.0,
-                "suggested_value": {"raw_sample": table_rows[:3]},
-                "source_page_no": source_page_no
-            }]
+            # Continuation page: reuse column mapping from previous page
+            if prev_col_map:
+                col_map = prev_col_map
+                data_rows = table_rows  # All rows are data (no header)
+            else:
+                # No previous mapping available — cannot parse
+                self.last_col_map = None
+                return [], [{
+                    "issue_type": "UNKNOWN_TABLE_HEADER",
+                    "confidence": 30.0,
+                    "suggested_value": {"raw_sample": table_rows[:3]},
+                    "source_page_no": source_page_no
+                }]
+        else:
+            data_rows = table_rows[header_idx + 1:]
+
+        self.last_col_map = col_map
 
         transactions = []
         review_items = []
-        data_rows = table_rows[header_idx + 1:]
 
         from app.services.table_parse import parse_table_page_rows
         transactions, row_reviews, failed_count = parse_table_page_rows(

@@ -1,11 +1,13 @@
 import os
 import hashlib
+import traceback
 from typing import Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.core.database import get_db, SessionLocal
 from app.core.config import settings
 from app.core.security import get_current_user, require_roles, CurrentUser, Role
 from app.core.encryption import encrypt_data
@@ -53,7 +55,7 @@ async def inspect_statement_file(
         }
 
     if ext == "pdf":
-        return inspect_pdf_bytes(content)
+        return await run_in_threadpool(inspect_pdf_bytes, content)
 
     return {
         "is_valid": True,
@@ -66,23 +68,49 @@ async def inspect_statement_file(
         "message": "No password required. Spreadsheet ready to parse."
     }
 
+def _run_pipeline_background(statement_id: str, pdf_password: Optional[str] = None) -> None:
+    """
+    Runs the full statement parsing pipeline in a worker thread with its own DB session.
+    Never blocks the FastAPI event loop and never depends on Redis/Celery being available.
+    """
+    print(f"[STAGE] Statement {statement_id}: BACKGROUND_TASK_STARTED", flush=True)
+    db = SessionLocal()
+    try:
+        process_statement_pipeline(statement_id, db, pdf_password)
+        print(f"[STAGE] Statement {statement_id}: BACKGROUND_TASK_FINISHED", flush=True)
+    except (PasswordRequiredException, InvalidPasswordException) as pwd_err:
+        print(f"[STAGE] Statement {statement_id}: PASSWORD_ERROR - {pwd_err}", flush=True)
+        logger.warning(f"Password required/invalid for statement {statement_id}: {pwd_err}")
+    except (CorruptedPdfException, UnsupportedEncryptionException, NoTransactionsFoundException, OcrExtractionFailedException) as parse_err:
+        print(f"[STAGE] Statement {statement_id}: PARSE_ERROR - {parse_err}", flush=True)
+        logger.warning(f"Parsing failed for statement {statement_id}: {parse_err}")
+    except Exception as exc:
+        print(f"[STAGE] Statement {statement_id}: UNHANDLED_ERROR - {exc}", flush=True)
+        traceback.print_exc()
+        logger.error(f"Background parsing error for statement {statement_id}: {exc}", exc_info=True)
+    finally:
+        pdf_password = None
+        db.close()
+
+
 @router.post("/upload")
 async def upload_statement(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     application_id: Optional[str] = Form(None),
     customer_name: Optional[str] = Form(None),
     pdf_password: Optional[str] = Form(None),
     account_type: Optional[str] = Form("SAVINGS"),
-    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(require_roles([Role.ADMIN, Role.UNDERWRITER, Role.SALES_DSA]))
 ):
     """
     Uploads bank statement file (PDF/CSV/XLS/XLSX <= 50MB).
-    Encrypts file at rest with AES-256.
+    Encrypts file at rest with AES-256 in OS temp storage.
     Computes SHA-256 hash for deduplication.
     Never persists pdf_password to disk, database, or logs.
     """
+    print(f"[STAGE] Upload received: {file.filename} (app={application_id})", flush=True)
     content = await file.read()
     file_size_mb = len(content) / (1024 * 1024)
     if file_size_mb > 50:
@@ -93,10 +121,10 @@ async def upload_statement(
     if ext not in ["pdf", "csv", "xls", "xlsx"]:
         raise HTTPException(status_code=400, detail="Unsupported file format. Please upload PDF, CSV, XLS, or XLSX.")
 
-    # Backend is the source of truth: inspect PDF encryption & validity immediately
+    # Backend is the source of truth: inspect PDF encryption & validity without blocking event loop
     pdf_inspection = None
     if ext == "pdf":
-        pdf_inspection = inspect_pdf_bytes(content)
+        pdf_inspection = await run_in_threadpool(inspect_pdf_bytes, content)
         if not pdf_inspection["is_valid"]:
             raise CorruptedPdfException(pdf_inspection["message"])
 
@@ -109,11 +137,12 @@ async def upload_statement(
         ).first()
 
         if existing_stmt:
-            # If statement previously required a password or failed, and user is providing password or re-uploading
-            if (existing_stmt.status in ["PASSWORD_REQUIRED", "FAILED", "PARSING_FAILED", "INVALID_FILE"] or pdf_password) and existing_stmt.status != "PARSED":
+            # If statement previously required a password, failed, or was left stuck in FILE_UPLOADED/PARSING
+            if (existing_stmt.status in ["PASSWORD_REQUIRED", "FAILED", "PARSING_FAILED", "INVALID_FILE", "FILE_UPLOADED"] or pdf_password) and existing_stmt.status not in ["PARSED", "PARSED_WITH_WARNINGS"]:
                 logger.info(f"Re-processing existing statement {existing_stmt.id} with new password/attempt")
                 if pdf_inspection and pdf_inspection["is_encrypted"] and not (pdf_password and pdf_password.strip()):
                     existing_stmt.status = "PASSWORD_REQUIRED"
+                    existing_stmt.processing_stage = "PASSWORD_VERIFICATION"
                     existing_stmt.error_message = "PDF is password protected. Please enter the PDF password to unlock and parse."
                     db.commit()
                     return {
@@ -125,10 +154,25 @@ async def upload_statement(
                         "file_name": existing_stmt.file_name_original,
                         "is_duplicate": False
                     }
+                # Ensure encrypted file still exists before re-running
+                if not existing_stmt.file_path_encrypted or not os.path.exists(existing_stmt.file_path_encrypted):
+                    os.makedirs(settings.STORAGE_PATH, exist_ok=True)
+                    enc_path = os.path.join(settings.STORAGE_PATH, f"{file_hash}.enc")
+                    with open(enc_path, "wb") as f:
+                        f.write(encrypt_data(content))
+                    existing_stmt.file_path_encrypted = enc_path
+
+                existing_stmt.status = "PARSING"
+                existing_stmt.processing_stage = "PDF_VERIFICATION"
+                existing_stmt.error_message = None
+                db.commit()
+
                 try:
-                    process_statement_pipeline(existing_stmt.id, db, pdf_password)
+                    await run_in_threadpool(process_statement_pipeline, existing_stmt.id, db, pdf_password)
                 except (PasswordRequiredException, InvalidPasswordException) as pwd_err:
                     logger.warning(f"Password required on re-process: {pwd_err}")
+                except (CorruptedPdfException, UnsupportedEncryptionException, NoTransactionsFoundException, OcrExtractionFailedException) as parse_err:
+                    logger.warning(f"Re-process parsing failed: {parse_err}")
                 except Exception as p_err:
                     logger.warning(f"Re-process attempt failed: {p_err}")
                 db.refresh(existing_stmt)
@@ -228,20 +272,29 @@ async def upload_statement(
             "file_name": file.filename
         }
 
-    # Trigger parsing pipeline: try async via Celery or background task
-    try:
-        from app.workers.parse_task import parse_statement_async
-        parse_statement_async.delay(new_stmt.id, pdf_password)
-    except Exception as e:
-        logger.info(f"Celery queue not reachable ({e}), executing synchronously or via BackgroundTasks")
+    # Trigger parsing pipeline: use Celery ONLY if explicitly enabled, otherwise run_in_threadpool (non-blocking)
+    celery_enabled = os.environ.get("CELERY_ENABLED", "").lower() == "true"
+    queued_via_celery = False
+    if celery_enabled:
         try:
-            process_statement_pipeline(new_stmt.id, db, pdf_password)
+            from app.workers.parse_task import parse_statement_async
+            parse_statement_async.delay(new_stmt.id, pdf_password)
+            queued_via_celery = True
+            print(f"[STAGE] Statement {new_stmt.id}: QUEUED_TO_CELERY", flush=True)
+        except Exception as e:
+            logger.warning(f"Celery queue not reachable ({e}), running in threadpool")
+
+    if not queued_via_celery:
+        print(f"[STAGE] Statement {new_stmt.id}: FILE_UPLOADED -> Running pipeline in threadpool", flush=True)
+        try:
+            await run_in_threadpool(process_statement_pipeline, new_stmt.id, db, pdf_password)
         except (PasswordRequiredException, InvalidPasswordException) as pwd_err:
             logger.warning(f"Password required for statement {new_stmt.id}: {pwd_err}")
         except (CorruptedPdfException, UnsupportedEncryptionException, NoTransactionsFoundException, OcrExtractionFailedException) as parse_err:
             logger.warning(f"Parsing failed for statement {new_stmt.id}: {parse_err}")
         except Exception as parse_err:
-            logger.error(f"Sync parsing error: {parse_err}")
+            traceback.print_exc()
+            logger.error(f"Threadpool parsing error for statement {new_stmt.id}: {parse_err}", exc_info=True)
 
     db.refresh(new_stmt)
     db.refresh(app_obj)

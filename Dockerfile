@@ -42,7 +42,7 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 # Environment configurations
 ENV PYTHONUNBUFFERED=1 \
     ENVIRONMENT=production \
-    STORAGE_PATH=./uploads \
+    STORAGE_PATH=/tmp/bsi_uploads \
     DATABASE_URL=sqlite:///./bank_intelligence.db \
     PORT=10000
 
@@ -53,5 +53,5 @@ EXPOSE 10000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:${PORT}/health || exit 1
 
-# Start FastAPI application
-CMD ["sh", "-c", "cd backend && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}"]
+# Start FastAPI application with single worker for Render 512MB RAM & SQLite consistency
+CMD ["sh", "-c", "mkdir -p /tmp/bsi_uploads && cd backend && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000} --workers 1"]

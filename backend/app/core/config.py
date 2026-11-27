@@ -1,6 +1,9 @@
 import os
+import tempfile
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
+
+DEFAULT_TEMP_STORAGE = os.path.join(tempfile.gettempdir(), "bsi_uploads")
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Bank Statement Intelligence Module"
@@ -8,7 +11,7 @@ class Settings(BaseSettings):
     PORT: int = 8000
     DATABASE_URL: str = "sqlite:///./bank_intelligence.db"
     REDIS_URL: str = "redis://localhost:6379/0"
-    STORAGE_PATH: str = "./uploads"
+    STORAGE_PATH: str = DEFAULT_TEMP_STORAGE
     
     # Encryption key: 32 bytes base64 encoded
     ENCRYPTION_KEY: str = "u2h_wXg-94xK8W_7D_K7Y1b6-M_d7s6y1A_z9L3m5_k="

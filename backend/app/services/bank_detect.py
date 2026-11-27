@@ -89,6 +89,16 @@ def detect_bank_and_account(
                             customer_name = cand
                             break
 
+    # Axis Bank: name is typically the very first non-empty text line
+    if not customer_name:
+        lines = [l.strip() for l in full_text.split('\n') if l.strip()]
+        if lines:
+            cand = lines[0].strip()
+            words = cand.split()
+            if 2 <= len(words) <= 5 and all(w.replace('.', '').isalpha() for w in words):
+                if not any(k in cand.upper() for k in ['STATEMENT', 'BANK', 'BRANCH', 'ACCOUNT', 'CRN', 'PAGE', 'SUMMARY', 'NOMINEE', 'JOINT', 'CURRENCY']):
+                    customer_name = cand
+
     return {
         "bank_name": bank_name,
         "bank_code": bank_code,

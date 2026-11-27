@@ -5,20 +5,18 @@
   "account_types": ["SAVINGS", "CURRENT"],
   "amount_style": "TWO_COL",
   "header_aliases": {
-    "date": ["Tran Date", "Txn Date", "Date"],
-    "ref": ["Chq No", "Cheque No", "Ref No"],
-    "narration": ["Particulars", "Description", "Tran Particulars"],
-    "debit": ["Debit", "Dr"],
-    "credit": ["Credit", "Cr"],
-    "balance": ["Balance", "Net Balance"],
-    "branch": ["Init Br", "Branch Name"]
+    "date": ["Tran Date", "Txn Date", "Date", "Transaction Date"],
+    "ref": ["Chq No", "Cheque No", "Ref No", "Chq/Ref"],
+    "narration": ["Particulars", "Description", "Tran Particulars", "Transaction Details"],
+    "debit": ["Debit", "Dr", "Debit Amount"],
+    "credit": ["Credit", "Cr", "Credit Amount"],
+    "balance": ["Balance", "Net Balance", "Closing Balance"]
   },
-  "date_formats": ["%d-%m-%Y", "%d/%m/%Y", "%d %b %Y"],
-  "opening_keywords": ["OPENING BALANCE", "BROUGHT FORWARD"],
+  "date_formats": ["%d-%m-%Y", "%d/%m/%Y", "%d %b %Y", "%d-%b-%Y"],
+  "opening_keywords": ["OPENING BALANCE", "BROUGHT FORWARD", "B/F"],
   "narration_keywords": {
-    "emi": ["ACH/DR", "NACH/DR", "EMI DEBIT", "LOAN REPAYMENT", "AUTO DEBIT"],
-    "return": ["RETURN", "RET", "CHQ RET", "NACH RET", "ECS RET"],
-    "charge": ["CHQ RTN CHARGES", "RETURN CHARGES", "ECS BOUNCE CHG"]
+    "emi": ["ACH/DR", "NACH/DR", "EMI DEBIT", "LOAN REPAYMENT", "AUTO DEBIT", "PPR0", "EMI_", "E-NACH"],
+    "return": ["RETURN", "RET", "CHQ RET", "NACH RET", "ECS RET", "UNPAID", "BOUNCE"],
+    "charge": ["CHQ RTN CHARGES", "RETURN CHARGES", "ECS BOUNCE CHG", "NACH RTN CHG"]
   }
 }
-

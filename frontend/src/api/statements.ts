@@ -75,6 +75,7 @@ export function inspectStatementFile(file: File): Promise<PdfInspectionResult> {
   return apiFetch<PdfInspectionResult>('/api/statements/inspect', {
     method: 'POST',
     body: formData,
+    timeoutMs: 60000,
   });
 }
 
@@ -102,6 +103,7 @@ export function uploadStatement(
   return apiFetch<StatementUploadResponse>('/api/statements/upload', {
     method: 'POST',
     body: formData,
+    timeoutMs: 90000,
   });
 }
 
@@ -116,7 +118,9 @@ export function resetNewApplication(): Promise<{ id: string; customer_id: string
 }
 
 export function getStatementStatus(statementId: string): Promise<StatementStatus> {
-  return apiFetch<StatementStatus>(`/api/statements/${statementId}/status`);
+  return apiFetch<StatementStatus>(`/api/statements/${statementId}/status`, {
+    timeoutMs: 15000,
+  });
 }
 
 export function unlockStatement(
@@ -125,7 +129,8 @@ export function unlockStatement(
 ): Promise<any> {
   return apiFetch<any>(`/api/statements/${statementId}/unlock`, {
     method: 'POST',
-    body: JSON.stringify({ password })
+    body: JSON.stringify({ password }),
+    timeoutMs: 90000,
   });
 }
 

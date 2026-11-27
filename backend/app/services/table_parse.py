@@ -45,11 +45,47 @@ def parse_table_page_rows(
             if not parsed_date:
                 # Skip page headers/footers before treating as continuation text
                 row_text_upper = " ".join([str(c).strip().upper() for c in row if c])
+
+                # Handle OPENING BALANCE row with no date (Axis Bank, etc.)
+                is_opening_row = any(k in row_text_upper for k in opening_keywords)
+                if is_opening_row:
+                    balance_raw = row[col_map["balance"]] if "balance" in col_map and col_map["balance"] < len(row) else None
+                    balance = parse_indian_amount(balance_raw)
+                    if balance is not None:
+                        # Use a placeholder date; statement_processor will use first real txn date
+                        from datetime import date as date_cls
+                        row_hash_str = "OPENING_BALANCE_%s" % balance
+                        row_hash = hashlib.sha256(row_hash_str.encode("utf-8")).hexdigest()
+                        txn_obj = {
+                            "txn_date": date_cls(1900, 1, 1),  # Placeholder, corrected later
+                            "value_date": date_cls(1900, 1, 1),
+                            "narration_raw": "OPENING BALANCE",
+                            "narration_clean": "OPENING BALANCE",
+                            "ref_no": None,
+                            "utr": None,
+                            "debit": 0.0,
+                            "credit": 0.0,
+                            "balance": balance,
+                            "channel": "OTHER",
+                            "counterparty": None,
+                            "category": "OPENING_BALANCE",
+                            "source_page_no": source_page_no,
+                            "row_hash": row_hash,
+                            "confidence": 100.0,
+                            "is_duplicate": False,
+                            "is_internal_transfer": False
+                        }
+                        transactions.append(txn_obj)
+                        i += 1
+                        continue
+
                 is_header_footer = (
                     any(k in row_text_upper for k in [
                         "STATEMENT OF ACCOUNT", "GENERATED ON", "BROUGHT FORWARD",
-                        "CARRIED FORWARD", "PAGE ", "OPENING BALANCE", "CLOSING BALANCE",
-                        "TOTAL DEBIT", "TOTAL CREDIT"
+                        "CARRIED FORWARD", "PAGE ", "CLOSING BALANCE",
+                        "TOTAL DEBIT", "TOTAL CREDIT", "TRANSACTION TOTAL",
+                        "END OF STATEMENT", "UNLESS THE CONSTITUENT",
+                        "WE WOULD LIKE TO REITERATE"
                     ])
                     or ("DATE" in row_text_upper and "BALANCE" in row_text_upper and ("DEBIT" in row_text_upper or "WITHDRAWAL" in row_text_upper or "NARRATION" in row_text_upper))
                 )

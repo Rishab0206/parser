@@ -1,3 +1,4 @@
+import gc
 import io
 from typing import List, Dict, Any, Tuple, Optional
 import fitz  # PyMuPDF
@@ -35,9 +36,12 @@ def extract_pdf_pages_data(
         used_ocr = True
         for page_idx in range(total_pages):
             page = doc[page_idx]
-            pix = page.get_pixmap(dpi=200)
+            pix = page.get_pixmap(dpi=150)
             img_bytes = pix.tobytes("png")
+            del pix
             ocr_text = perform_ocr_on_image(img_bytes)
+            del img_bytes
+            gc.collect()
             # Reconstruct table rows from OCR line breaks
             lines = [line.strip().split() for line in ocr_text.split("\n") if line.strip()]
             pages_data.append({
