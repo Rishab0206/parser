@@ -1,12 +1,16 @@
 import io
+from typing import List, Dict, Any, Tuple, Optional
 import fitz  # PyMuPDF
 import pdfplumber
 import pandas as pd
-from typing import List, Dict, Any, Tuple
 from app.services.ocr import perform_ocr_on_image
 from app.core.logging import logger
 
-def extract_pdf_pages_data(doc: fitz.Document, raw_bytes: bytes) -> Tuple[List[Dict[str, Any]], bool]:
+def extract_pdf_pages_data(
+    doc: fitz.Document,
+    raw_bytes: bytes,
+    password: Optional[str] = None
+) -> Tuple[List[Dict[str, Any]], bool]:
     """
     Extracts text and table rows per page from an opened PyMuPDF Document.
     Falls back to OCR if avg chars per page < 200 or no text extracted.
@@ -44,8 +48,14 @@ def extract_pdf_pages_data(doc: fitz.Document, raw_bytes: bytes) -> Tuple[List[D
         return pages_data, used_ocr
 
     # Standard digital PDF text & table extraction via pdfplumber
+    # Use decrypted bytes from doc so pdfplumber doesn't fail on encrypted PDFs
     try:
-        with pdfplumber.open(io.BytesIO(raw_bytes)) as pdf:
+        try:
+            decrypted_pdf_bytes = doc.tobytes()
+        except Exception:
+            decrypted_pdf_bytes = raw_bytes
+
+        with pdfplumber.open(io.BytesIO(decrypted_pdf_bytes), password=password) as pdf:
             for page_idx, page in enumerate(pdf.pages):
                 tables = page.extract_tables()
                 page_text = page.extract_text() or ""
@@ -53,9 +63,28 @@ def extract_pdf_pages_data(doc: fitz.Document, raw_bytes: bytes) -> Tuple[List[D
                 for table in tables:
                     for row in table:
                         if any(row):
-                            # Replace newlines inside cell with single space
-                            cleaned_cells = [str(cell).replace("\n", " ").strip() if cell is not None else "" for cell in row]
+                            cleaned_cells = [
+                                str(cell).replace("\n", " ").strip() if cell is not None else ""
+                                for cell in row
+                            ]
                             combined_rows.append(cleaned_cells)
+
+                # Fallback to PyMuPDF find_tables if pdfplumber found no tables
+                if not combined_rows:
+                    try:
+                        fitz_page = doc[page_idx]
+                        fitz_tables = fitz_page.find_tables()
+                        if fitz_tables and fitz_tables.tables:
+                            for ft in fitz_tables.tables:
+                                extracted = ft.extract()
+                                for r in extracted:
+                                    if any(r):
+                                        combined_rows.append([
+                                            str(c).replace("\n", " ").strip() if c is not None else ""
+                                            for c in r
+                                        ])
+                    except Exception:
+                        pass
 
                 if not combined_rows and page_text:
                     # Fallback line splitting if table borders aren't recognized
@@ -70,15 +99,29 @@ def extract_pdf_pages_data(doc: fitz.Document, raw_bytes: bytes) -> Tuple[List[D
                     "table_rows": combined_rows
                 })
     except Exception as e:
-        logger.warning(f"pdfplumber error, falling back to PyMuPDF text: {e}")
+        logger.warning(f"pdfplumber error, falling back to PyMuPDF text & tables: {e}")
         for page_idx in range(total_pages):
             page = doc[page_idx]
             text = page.get_text("text")
-            lines = [[w.strip() for w in line.split("  ") if w.strip()] for line in text.split("\n") if line.strip()]
+            combined_rows = []
+            try:
+                fitz_tables = page.find_tables()
+                if fitz_tables and fitz_tables.tables:
+                    for ft in fitz_tables.tables:
+                        for r in ft.extract():
+                            if any(r):
+                                combined_rows.append([
+                                    str(c).replace("\n", " ").strip() if c is not None else ""
+                                    for c in r
+                                ])
+            except Exception:
+                pass
+            if not combined_rows:
+                combined_rows = [[w.strip() for w in line.split("  ") if w.strip()] for line in text.split("\n") if line.strip()]
             pages_data.append({
                 "page_no": page_idx + 1,
                 "text": text,
-                "table_rows": lines
+                "table_rows": combined_rows
             })
 
     return pages_data, used_ocr
@@ -103,4 +146,3 @@ def extract_excel_or_csv(file_bytes: bytes, file_name: str) -> List[Dict[str, An
         "text": " ".join(headers),
         "table_rows": rows
     }]
-

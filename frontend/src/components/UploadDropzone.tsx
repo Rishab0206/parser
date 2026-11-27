@@ -509,34 +509,84 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({ onUploadSuccess 
             )}
           </div>
 
-          {/* Password Protection */}
-          <div className="pt-2 border-t border-slate-100">
-            <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-700">
-              <input
-                type="checkbox"
-                checked={isProtected}
-                onChange={(e) => setIsProtected(e.target.checked)}
-                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="flex items-center gap-1 font-medium">
-                <Lock className="w-3.5 h-3.5 text-slate-400" />
-                This PDF is password protected
+          {/* Password Protection Option */}
+          <div className={`p-4 rounded-xl border transition-all ${
+            isProtected ? 'bg-amber-50/90 border-amber-300' : 'bg-slate-50 border-slate-200'
+          }`}>
+            <label className="flex items-center justify-between cursor-pointer select-none">
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={isProtected}
+                  onChange={(e) => setIsProtected(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <div>
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-amber-600" />
+                    Is this statement password protected?
+                  </span>
+                  <span className="text-[11px] text-slate-500 block">
+                    Check this option if your bank PDF requires an account password to open
+                  </span>
+                </div>
+              </div>
+              <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ${
+                isProtected ? 'bg-amber-200 text-amber-900 border border-amber-300' : 'bg-slate-200 text-slate-600'
+              }`}>
+                {isProtected ? 'Protected' : 'Unlocked / No Password'}
               </span>
             </label>
 
             {isProtected && (
-              <div className="mt-2">
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder="Enter PDF password (e.g. pan+dob)"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full sm:w-80 p-2 text-xs bg-white border border-slate-300 rounded-lg"
-                />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Password is used only in RAM during parsing and never saved to DB or logs.
-                </p>
+              <div className="mt-3 pt-3 border-t border-amber-200 space-y-2 animate-in fade-in duration-150">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Statement Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showUnlockPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    placeholder="Enter password (e.g. DOB in DDMMYYYY, PAN, or Name+DOB)"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-3 py-2 pr-10 text-xs bg-white border border-amber-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 font-mono shadow-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowUnlockPassword(!showUnlockPassword)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                    title={showUnlockPassword ? "Hide password" : "Show password"}
+                  >
+                    {showUnlockPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-amber-900">
+                  <span className="text-[10px] text-slate-500">
+                    Password is held in RAM only during parsing and never saved to database or logs.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordHints(!showPasswordHints)}
+                    className="text-amber-800 hover:text-amber-950 font-semibold underline text-[10px]"
+                  >
+                    {showPasswordHints ? 'Hide bank hints ▲' : 'View bank hints ▼'}
+                  </button>
+                </div>
+
+                {showPasswordHints && (
+                  <div className="p-2.5 bg-white/90 rounded-lg border border-amber-200 text-[11px] text-slate-700 space-y-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px]">
+                      <div><strong>HDFC:</strong> Customer ID (9 digits) or DOB (DDMMYYYY)</div>
+                      <div><strong>SBI:</strong> DOB (DDMMYYYY) + Last 5 digits mobile</div>
+                      <div><strong>ICICI:</strong> First 4 letters name (lowercase) + DDMM</div>
+                      <div><strong>Axis:</strong> First 4 letters name (CAPS) + Last 4 acct</div>
+                      <div><strong>Kotak:</strong> CRN or DOB (DDMMYYYY)</div>
+                      <div><strong>Canara / BOB:</strong> Customer ID or Name + DDMM</div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

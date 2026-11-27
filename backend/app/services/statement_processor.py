@@ -56,7 +56,7 @@ def process_statement_pipeline(
             # Unlock PDF in memory
             doc, was_encrypted = unlock_pdf_in_memory(raw_bytes, pdf_password)
             stmt.page_count = len(doc)
-            pages_data, used_ocr = extract_pdf_pages_data(doc, raw_bytes)
+            pages_data, used_ocr = extract_pdf_pages_data(doc, raw_bytes, pdf_password)
             doc.close()
         elif ext in ["xlsx", "xls", "csv"]:
             stmt.page_count = 1
